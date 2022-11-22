@@ -34,12 +34,14 @@
 #include <SkBitmap.h>
 #include <SkCanvas.h>
 #include <SkData.h>
-#include <SkFilterQuality.h>
+//#include <SkFilterQuality.h>
 #include <SkSurface.h>
 #include <utils/Log.h>
 #include <utils/KeyedVector.h>
 
 #include <android_runtime/AndroidRuntime.h>
+#include "Bitmap.h"
+
 #define MX_SCALE 16.0f
 #define RET_ERR_INVALID_OPERATION -1
 #define RET_OK 0
@@ -304,16 +306,19 @@ int ImageOperator::setScale(float sx, float sy,void* addr){
         }
         SkPaint paint;
         paint.setBlendMode(SkBlendMode::kSrc);
-        paint.setFilterQuality(kHigh_SkFilterQuality);  // bilinear filtering
+        //paint.setFilterQuality(kHigh_SkFilterQuality);  // bilinear filtering
 
-        SkCanvas canvas(scaledBm, SkCanvas::ColorBehavior::kLegacy);
-        const SkIRect src = SkIRect::MakeXYWH((mbitmap.width-srcW)/2, (mbitmap.height-srcH)/2,
+        SkCanvas canvas(scaledBm);
+        const SkRect src = SkRect::MakeXYWH((mbitmap.width-srcW)/2, (mbitmap.height-srcH)/2,
                                             (mbitmap.width+srcW)/2, (mbitmap.height+srcH)/2);
 
         const SkRect dst = SkRect::MakeXYWH((mscreen.surfaceW-dstWidth)/2, (mscreen.surfaceH-dstHeight)/2,
                                            (mscreen.surfaceW+dstWidth)/2, (mscreen.surfaceH+dstHeight)/2);
 
-        canvas.drawBitmapRect(bitmap, src, dst, &paint);
+        auto image = bitmap.asImage();
+        auto sampling = SkSamplingOptions();
+        canvas.drawImageRect(image, src, dst, sampling, &paint,
+                             SkCanvas::kFast_SrcRectConstraint);
         return renderAndShow(&scaledBm,addr);
 }
 int ImageOperator::renderAndShow(SkBitmap *bmp,void* addr) {

@@ -26,8 +26,8 @@
 #define LOG_TAG "SurfaceOverlay-jni"
 #include <SkCanvas.h>
 //#include <SkImagePriv.h>
-#include <SkWebpEncoder.h>
-#include <SkHighContrastFilter.h>
+#include <encode/SkWebpEncoder.h>
+#include <effects/SkHighContrastFilter.h>
 #include <limits>
 
 namespace android {

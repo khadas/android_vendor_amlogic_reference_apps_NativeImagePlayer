@@ -16,6 +16,7 @@
  ******************************************************************/
 package com.droidlogic.imageplayer;
 
+import android.graphics.PixelFormat;
 import android.widget.Button;
 import android.app.Activity;
 import android.content.BroadcastReceiver;
@@ -344,11 +345,20 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
         }
 
         mImageList = initFileList(mUri);
+        if (mImageList == null || mImageList.isEmpty()) {
+            toastMessage("ERROR: Can not init file list");
+            finish();
+            return;
+        }
 
         if (ImagePlayer.getProperties("rw.app.imageplayer.debug", false)) {
             initNextButton();
         }
         Log.d(TAG, "onCreate uri " + mUri + " scheme " + mUri.getScheme() + " path " + mUri.getPath());
+    }
+
+    private void toastMessage(String msg) {
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
     }
 
 
@@ -368,8 +378,14 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
     }
 
     private ArrayList<Uri> initFileList(Uri uri) {
+        Log.d(TAG, "initFileList: uri= " + uri);
+
         ArrayList<Uri> items = new ArrayList();
         String path = getPathByUri(uri);
+        if (path == null) {
+            return null;
+        }
+
         File parentFile = new File(path).getParentFile();
         if (parentFile == null) {
             Log.e(TAG, "initPath parent unknown for " + uri.getPath());
@@ -477,12 +493,14 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
     private String getDataColumn(Context context, Uri uri, String selection, String[] selectionArgs) {
         Cursor cursor = null;
         final String[] projection = {
-                "_data"
+                MediaStore.Images.ImageColumns.DATA
         };
         try {
             cursor = getContentResolver().query(uri, projection, selection, selectionArgs, null);
-            if (cursor != null && cursor.moveToFirst()) {
-                final int index = cursor.getColumnIndexOrThrow("_data");
+            if (cursor != null && cursor.getCount() > 0) {
+                cursor.moveToFirst();
+
+                final int index = cursor.getColumnIndexOrThrow(MediaStore.Images.ImageColumns.DATA);
                 return cursor.getString(index);
             }
         } catch (Exception e) {
@@ -550,7 +568,8 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
         mSurfaceView.getHolder().addCallback(new SurfaceCallback());
         mSurfaceView.getHolder().setKeepScreenOn(true);
         mSurfaceView.getHolder().setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
-        mSurfaceView.getHolder().setFormat(258);
+        mSurfaceView.getHolder().setFormat(PixelFormat.RGBA_8888);
+//        mSurfaceView.getHolder().setFormat(258);
         mSurfaceView.setFocusable(true);
         mSurfaceView.setFocusableInTouchMode(true);
         mSurfaceView.setOnClickListener(this);

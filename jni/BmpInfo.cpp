@@ -104,8 +104,7 @@ jlong setDataSource(JNIEnv *env, jobject obj1, jstring filePath){
         ALOGE("codec cannot get");
         return false;
     }*/
-    auto androidCodec = SkAndroidCodec::MakeFromCodec(std::move(c),
-            SkAndroidCodec::ExifOrientationBehavior::kRespect);
+    auto androidCodec = SkAndroidCodec::MakeFromCodec(std::move(c));
     if (!androidCodec.get()) {
 
         ALOGE("androidCodec cannot get");
@@ -153,8 +152,7 @@ bool decodeInner(JNIEnv *env, jobject obj1, jlong nativePtr, jint targetWidth, j
     std::unique_ptr<SkStream> s = stream->fork();
     std::unique_ptr<SkCodec> c(SkCodec::MakeFromStream(std::move(s)));
 
-    auto codec = SkAndroidCodec::MakeFromCodec(std::move(c),
-            SkAndroidCodec::ExifOrientationBehavior::kRespect);
+    auto codec = SkAndroidCodec::MakeFromCodec(std::move(c));
     if (!codec.get()) {
 
         ALOGE("androidCodec cannot get");
@@ -254,9 +252,13 @@ bool decodeInner(JNIEnv *env, jobject obj1, jlong nativePtr, jint targetWidth, j
         SkPaint paint;
         paint.setAntiAlias(true);
         paint.setDither(true);
-        paint.setFilterQuality(kHigh_SkFilterQuality);
         canvas->save();
-        canvas->drawBitmapRect(bmp, srcRect, destRect, &paint,SkCanvas::kFast_SrcRectConstraint);
+
+        auto image = bmp.asImage();
+        auto sampling = SkSamplingOptions();
+        canvas->drawImageRect(image, srcRect, destRect, sampling, &paint,
+                               SkCanvas::kFast_SrcRectConstraint);
+
         canvas->restore();
         delete canvas;
         devNativeBitmap->setImmutable();

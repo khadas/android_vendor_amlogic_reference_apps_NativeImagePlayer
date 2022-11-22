@@ -17,27 +17,22 @@
 
 package com.droidlogic.imageplayer.decoder;
 
-import android.content.Context;
+import android.graphics.Point;
 import android.graphics.Rect;
 import android.os.Handler;
-import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.Point;
-import android.graphics.drawable.BitmapDrawable;
 import android.os.HandlerThread;
+import android.os.Looper;
 import android.os.Process;
+import android.util.Log;
+import android.view.Gravity;
 import android.view.Surface;
-import android.media.Image;
-import android.net.Uri;
-import android.os.RemoteException;
-import android.util.Size;
 import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.util.Log;
+import android.widget.FrameLayout;
+
 import com.droidlogic.app.SystemControlManager;
-import java.io.File;
-import java.lang.reflect.Field;
+
 import java.lang.reflect.Method;
 public class ImagePlayer {
     public static final String TAG = "ImagePlayer";
@@ -239,7 +234,7 @@ public class ImagePlayer {
     }
 
     public void bindSurface(SurfaceHolder holder) {
-        bindSurface(holder.getSurface());
+        bindSurface(holder.getSurface(), mOsdWidth, mOsdHeight);
         bindSurface = true;
     }
     private Point getInitialFrameSize() {
@@ -303,12 +298,23 @@ public class ImagePlayer {
         int frameHeight = (int)(mSurfaceHeight*sy);
         int top = (mOsdHeight - frameHeight)/2;
         int left = (mOsdWidth - frameWidth)/2;
-        Log.d("TAG","setPaintSize"+left+"-"+top+"-"+(left+frameWidth)+"-"+(top+frameHeight)+" mSurfaceView"+mSurfaceView);
-        SurfaceControl sc = mSurfaceView.getSurfaceControl();
-        new SurfaceControl.Transaction().setVisibility(sc, true)
-                        .setGeometry(sc, null, new Rect(left, top, left+frameWidth, top+frameHeight), Surface.ROTATION_0)
-                        .setBufferSize(sc,frameWidth,frameHeight)
-                        .apply();
+        Log.d(TAG, "setPaintSize: frameWidth= " + frameWidth + ", frameHeight= " + frameHeight);
+        Log.d("TAG","setPaintSize ["+left+", "+top+", "+(left+frameWidth)+", "+(top+frameHeight)+"] mSurfaceView"+mSurfaceView);
+
+        new Handler(Looper.getMainLooper()).post(()->{
+            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(frameWidth, frameHeight);
+            params.gravity = Gravity.CENTER;
+            params.leftMargin = params.rightMargin = left;
+            params.topMargin = params.bottomMargin = top;
+            mSurfaceView.setLayoutParams(params);
+        });
+
+//        SurfaceControl sc = mSurfaceView.getSurfaceControl();
+//        new SurfaceControl.Transaction().setVisibility(sc, true)
+//                        .setGeometry(sc, null,
+//                                new Rect(left, top, left+frameWidth, top+frameHeight), Surface.ROTATION_0)
+//                        .setBufferSize(sc,frameWidth,frameHeight)
+//                        .apply();
     }
     private Runnable rotateWork = new Runnable() {
          @Override
@@ -337,13 +343,15 @@ public class ImagePlayer {
     }
 
     public int setScale(float sx, float sy) {
-       /* boolean redraw = true;
+       /*boolean redraw = true;
         synchronized(lockObject) {
+
             if (mBmpInfoHandler instanceof GifBmpInfo) {
                 redraw = false;
             }
             nativeScale(sx, sy, redraw);
         }*/
+
         setPaintSize(sx,sy);
         return 0;
     }
@@ -456,7 +464,7 @@ public class ImagePlayer {
             initVideoParam();
         }
     }
-    private native void bindSurface(Surface surface);
+    private native void bindSurface(Surface surface, int screenWidth, int screenHeight);
 
     private native void nativeUnbindSurface();
 

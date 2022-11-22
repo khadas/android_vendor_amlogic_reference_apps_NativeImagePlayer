@@ -7,8 +7,9 @@ static jclass bmpinfo_class;
 
 // These need to stay in sync with ImageDecoder.java's Error constants.
 GifCodec::GifCodec(std::unique_ptr<SkAndroidCodec> codec,
-    sk_sp<SkPngChunkReader> peeker):ImageDecoder(std::move(codec),peeker),fFrame(-1),fTotalFrames(0){
-        fCodec = mCodec->codec();
+    sk_sp<SkPngChunkReader> peeker): fFrame(-1),fTotalFrames(0){
+        fImageDecoder = new ImageDecoder(std::move(codec),peeker);
+        fCodec = fImageDecoder->mCodec->codec();
         fFrameInfos.clear();
         fFrames.clear();
 }
@@ -23,6 +24,11 @@ GifCodec::~GifCodec() {
         fFrames.clear();
         fFrameInfos.clear();
         fCodec = NULL;
+
+        if (fImageDecoder != nullptr) {
+            delete fImageDecoder;
+            fImageDecoder = nullptr;
+        }
     }
 }
 int GifCodec::getFrameSize() {
@@ -39,8 +45,7 @@ jlong nativeSetGif(JNIEnv *env, jobject obj1, jstring filepath){
     ALOGE("GifBmpInfo setDataSource %s",path);
     auto codec = SkCodec::MakeFromData(SkData::MakeFromFileName(path));
     if (codec) {
-        auto androidCodec = SkAndroidCodec::MakeFromCodec(std::move(codec),
-                SkAndroidCodec::ExifOrientationBehavior::kRespect);
+        auto androidCodec = SkAndroidCodec::MakeFromCodec(std::move(codec));
         if (!androidCodec.get()) {
 
             ALOGE("androidCodec cannot get");

@@ -7,13 +7,15 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
-#include <amlogic/am_gralloc_ext.h>
 #include <string>
 #include <vector>
 #include <math.h>
-//#include <amlogic/am_gralloc_uvm_ext.h>
+#include <am_gralloc_uvm_ext.h>
+#include <am_gralloc_ext.h>
 #include "android-base/parseint.h"
 #include "android-base/properties.h"
+#include "Bitmap.h"
+
 using namespace android;
 //using namespace android::bitmap;
 #define DEFAULT_WIDTH 1920
@@ -40,9 +42,23 @@ static jfieldID mImagePlayer_ScreenWidth;
 static jfieldID mImagePlayer_ScreenHeight;
 static jfieldID mImagePlayer_VideoScale;
 
+
+static auto am_gralloc_get_omx_osd_producer_usage = []()->uint64_t {
+    enum BufferUsage {
+        GPU_RENDER_TARGET = 1 << 9,
+        VIDEO_DECODER = 1 << 22,
+    };
+
+    return static_cast<uint64_t>(BufferUsage::VIDEO_DECODER | BufferUsage::GPU_RENDER_TARGET);
+};
+
 extern bool am_gralloc_set_uvm_buf_usage(const native_handle_t * hnd, int usage);
 extern void rgbToYuv420(uint8_t* rgbBuf, size_t width, size_t height, uint8_t* yPlane,
         uint8_t* crPlane, uint8_t* cbPlane, size_t chromaStep, size_t yStride, size_t chromaStride, SkColorType colorType);
+
+static bool setUvmUsage(ANativeWindowBuffer *buf, int usage) {
+    return am_gralloc_set_uvm_buf_usage(buf->handle, usage);
+}
 
 static std::string& StringTrim(std::string &str)
 {
@@ -113,7 +129,6 @@ static int initParam(JNIEnv *env, jobject entity) {
             mFrameHeight = atoi(axis[1].c_str());
         }
         ALOGE("read axis %s %d %d",v.c_str(),mFrameWidth,mFrameHeight);
-
     }
 
     jclass imageplayer_class = FindClassOrDie(env,"com/droidlogic/imageplayer/decoder/ImagePlayer");
@@ -133,9 +148,11 @@ static int initParam(JNIEnv *env, jobject entity) {
     ALOGE("after initial param");
     return ret;
 }
-void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface){
+void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface, jint screenWidth, jint screenHeight){
     sp<IGraphicBufferProducer> new_st = NULL;
     jnienv = env;
+    mOsdWidth = screenWidth;
+    mOsdHeight = screenHeight;
     if (jsurface) {
         sp<Surface> surface(android_view_Surface_getSurface(env, jsurface));
         if (surface != NULL) {
@@ -146,6 +163,7 @@ void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface){
                                   "The surface does not have a binding SurfaceTexture!");
                 return;
             }
+
         } else {
             jniThrowException(env, "java/lang/IllegalArgumentException",
                               "The surface has been released");
@@ -155,9 +173,11 @@ void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface){
 
     if (new_st != NULL) {
         mNativeWindow = new Surface(new_st,/*controlledByApp*/false);
+
         ALOGI("before connect");
         native_window_api_connect(mNativeWindow.get(),
                        NATIVE_WINDOW_API_MEDIA);
+
         ALOGI("set native window overlay %0x",GRALLOC1_PRODUCER_USAGE_CAMERA);
         CHECK_EQ(0,native_window_set_usage(mNativeWindow.get(), am_gralloc_get_omx_osd_producer_usage()));
         //CHECK_EQ(0,native_window_set_usage(mNativeWindow.get(), am_gralloc_get_video_decoder_full_buffer_usage()));
@@ -215,17 +235,16 @@ static int rotate(JNIEnv *env, jclass clz,jint rotation, jboolean redraw) {
 }
 static int reRender(int32_t width, int32_t height, void *data, size_t inLen, SkColorType colorType) {
     status_t err = NO_ERROR;
-    int ret = 0;
     int frame_width = ((width + 1) & ~1);
     int frame_height =((height + 1) & ~1);
     ALOGE("Repeat render for frame size (%d x %d)-->(%d x %d)",width,height,frame_width,frame_height);
     ANativeWindowBuffer *buf;
     native_window_set_buffers_dimensions(mNativeWindow.get(), frame_width, frame_height);
     //status_t res =  mNativeWindow->dequeueBuffer(mNativeWindow.get(),&buf,&fenceFd);
-    status_t res =  native_window_dequeue_buffer_and_wait(mNativeWindow.get(),&buf);
-    if (res != OK) {
-        ALOGE("%s:reRender Dequeue buffer failed: %s (%d)", __FUNCTION__, strerror(-res), res);
-        switch (res) {
+    err =  native_window_dequeue_buffer_and_wait(mNativeWindow.get(),&buf);
+    if (err != OK) {
+        ALOGE("%s:reRender Dequeue buffer failed: %s (%d)", __FUNCTION__, strerror(-err), err);
+        switch (err) {
             case NO_INIT:
                 jniThrowException(jnienv, "java/lang/IllegalStateException",
                     "Surface has been abandoned");
@@ -233,21 +252,22 @@ static int reRender(int32_t width, int32_t height, void *data, size_t inLen, SkC
             default:
                 jniThrowRuntimeException(jnienv, "dequeue buffer failed");
         }
-        return ret;
+        return err;
     }
     ALOGE("-->buf %d %d  %d %d %p",buf->format,buf->stride,buf->width, buf->height, buf);
-    am_gralloc_set_uvm_buf_usage(buf->handle, 1);
+    setUvmUsage(buf, 1);
     GraphicBufferMapper &mapper = GraphicBufferMapper::get();
     Rect bounds(frame_width,frame_height);
     uint8_t* img = NULL;
-
-    err =  mapper.lock(buf->handle,GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_NEVER,bounds,(void**)(&img));
-    if (err != NO_ERROR) return err;
-    if (ret != OK) {
+    uint64_t usage = am_gralloc_get_omx_osd_producer_usage() |
+                     GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN;
+    err =  mapper.lock(buf->handle,usage,bounds,(void**)(&img));
+    if (err != NO_ERROR) {
         ALOGE("%s: Error trying to lock output buffer fence: %s (%d)", __FUNCTION__,
-                strerror(-ret), ret);
-        return ret;
+                strerror(-err), err);
+        return err;
     }
+    if (img == NULL) return -1;
     if (mMemory.getSize() > 0) {
         ALOGE("recopy %d %d %d",mMemory.getSize(),buf->height, buf->stride);
         mMemory.setUsed(true);
@@ -279,28 +299,28 @@ static int reRender(int32_t width, int32_t height, void *data, size_t inLen, SkC
 static int render(int32_t width, int32_t height, void *data, size_t inLen, SkColorType colorType ) {
     GraphicBufferMapper &mapper = GraphicBufferMapper::get();
     status_t err = NO_ERROR;
-    int ret = 0;
     int frame_width = ((width + 1) & ~1);
     int frame_height =((height + 1) & ~1);
     ALOGE("render for frame size (%d x %d)-->(%d x %d)",width,height,frame_width,frame_height);
     ANativeWindowBuffer *buf;
     native_window_set_buffers_dimensions(mNativeWindow.get(), frame_width, frame_height);
     //status_t res =  mNativeWindow->dequeueBuffer(mNativeWindow.get(),&buf,&fenceFd);
-     status_t res =  native_window_dequeue_buffer_and_wait(mNativeWindow.get(),&buf);
-    if (res != OK) {
-        ALOGE("%s: Dequeue buffer failed: %s (%d)", __FUNCTION__, strerror(-res), res);
-        return ret;
+    err = native_window_dequeue_buffer_and_wait(mNativeWindow.get(),&buf);
+    if (err != NO_ERROR) {
+        ALOGE("%s: Dequeue buffer failed: %s (%d)", __FUNCTION__, strerror(-err), err);
+        return err;
     }
-    am_gralloc_set_uvm_buf_usage(buf->handle, 1);
+    setUvmUsage(buf, 1);
     ALOGE("renderBuf %d %d  %d %d %d",buf->format,buf->stride,buf->width, buf->height, fenceFd);
     Rect bounds(frame_width,frame_height);
     uint8_t* img = NULL;
-    err =  mapper.lock(buf->handle,GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_NEVER,bounds,(void**)(&img));
-    if (err != NO_ERROR) return err;
-    if (ret != OK) {
+    uint64_t usage = am_gralloc_get_omx_osd_producer_usage() |
+            GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN;
+    err =  mapper.lock(buf->handle,usage, bounds,(void**)(&img));
+    if (err != NO_ERROR) {
         ALOGE("%s: Error trying to lock output buffer fence: %s (%d)", __FUNCTION__,
-                strerror(-ret), ret);
-        return ret;
+                strerror(-err), err);
+        return err;
     }
     if (img == NULL) return -1;
     memset(img, 128, buf->height * buf->stride*3/2);
@@ -324,33 +344,33 @@ static int render(int32_t width, int32_t height, void *data, size_t inLen, SkCol
 
     mNativeWindow->queueBuffer(mNativeWindow.get(), buf,  -1);
     img = NULL;
-    return 0;
+    return NO_ERROR;
 }
 
 static int renderEmpty(int32_t width, int32_t height) {
     GraphicBufferMapper &mapper = GraphicBufferMapper::get();
     status_t err = NO_ERROR;
-    int ret = 0;
     int frame_width = ((width + 1) & ~1);
     int frame_height =((height + 1) & ~1);
     ALOGE("render Empty for frame size (%d x %d)-->(%d x %d)",width,height,frame_width,frame_height);
     ANativeWindowBuffer *buf;
     native_window_set_buffers_dimensions(mNativeWindow.get(), frame_width, frame_height);
-     status_t res =  native_window_dequeue_buffer_and_wait(mNativeWindow.get(),&buf);
-    if (res != OK) {
-        ALOGE("%s: Dequeue buffer failed: %s (%d)", __FUNCTION__, strerror(-res), res);
-        return ret;
+    err =  native_window_dequeue_buffer_and_wait(mNativeWindow.get(),&buf);
+    if (err != OK) {
+        ALOGE("%s: Dequeue buffer failed: %s (%d)", __FUNCTION__, strerror(-err), err);
+        return err;
     }
-    am_gralloc_set_uvm_buf_usage(buf->handle, 1);
+    setUvmUsage(buf, 1);
     ALOGE("renderBuf %d %d  %d %d %d",buf->format,buf->stride,buf->width, buf->height, fenceFd);
     Rect bounds(frame_width,frame_height);
     uint8_t* img = NULL;
-    err =  mapper.lock(buf->handle,GRALLOC_USAGE_SW_READ_OFTEN | GRALLOC_USAGE_SW_WRITE_NEVER,bounds,(void**)(&img));
-    if (err != NO_ERROR) return err;
-    if (ret != OK) {
+    uint64_t usage = am_gralloc_get_omx_osd_producer_usage() |
+                     GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN;
+    err = mapper.lock(buf->handle,usage,bounds,(void**)(&img));
+    if (err != OK) {
         ALOGE("%s: Error trying to lock output buffer fence: %s (%d)", __FUNCTION__,
-                strerror(-ret), ret);
-        return ret;
+                strerror(-err), err);
+        return err;
     }
     if (img == NULL) return -1;
     memset(img, 16, buf->height * buf->stride);
@@ -566,7 +586,7 @@ static int transform(JNIEnv *env, jclass clz, jint rotation, jfloat sx, jfloat s
 }
 static const JNINativeMethod gImagePlayerMethod[] = {
     {"initParam",           "()I",     (void*)initParam},
-    {"bindSurface",           "(Landroid/view/Surface;)V",          (void*)bindSurface },
+    {"bindSurface",           "(Landroid/view/Surface;II)V",          (void*)bindSurface },
     {"nativeUnbindSurface",           "()V",          (void*)unbindSurface },
     {"nativeShow",                "(J)I",                               (void*)nativeShow },
     {"nativeScale",               "(FFZ)I",                             (void*)nativeScale},

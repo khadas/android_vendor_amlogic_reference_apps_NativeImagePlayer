@@ -17,27 +17,44 @@ android_app {
 
     compile_multilib: "32",
     srcs: ["src/**/*.java"],
+    jni_libs: ["libimage_jni"],
     system_ext_specific: true,
     certificate: "platform",
-    jni_libs: ["libimage_jni"],
     platform_apis: true,
 
+
     static_libs: [
-    "androidx.appcompat_appcompat",
-    "androidx-constraintlayout_constraintlayout",
+        "droidlogicLib",
+        "androidx.appcompat_appcompat",
+        "androidx-constraintlayout_constraintlayout",
     ],
     optimize: {
         enabled: false,
         proguard_flags_files: ["proguard.flags"],
     },
-    libs: ["droidlogic"],
+
     dex_preopt: {
         enabled: false,
     },
 }
 
+cc_defaults {
+    name: "skia_default",
+    defaults: ["skia_deps",],
+    include_dirs: [
+            "external/skia/include",
+            "external/skia/include/codec",
+            "external/skia/include/core",
+    ],
+
+    whole_static_libs: ["libskia"],
+}
+
 cc_library_shared {
     name: "libimage_jni",
+    defaults: [
+        "skia_default",
+    ],
     srcs: ["jni/*.cpp"],
     system_ext_specific: true,
     compile_multilib: "32",
@@ -58,20 +75,15 @@ cc_library_shared {
         "libamgralloc_ext",
     ],
     include_dirs: [
-        "external/skia/include/codec",
-        "external/skia/include/core",
         "frameworks/native/libs/nativewindow/include",
         "frameworks/native/libs/arect/include",
-        "hardware/amlogic/gralloc",
+        "hardware/amlogic/gralloc/amlogic",
         "vendor/amlogic/common/frameworks/services",
     ],
     header_libs: [
         "libhwui_internal_headers",
         "android_graphics_jni_headers",
-    ],
-    static_libs: [
-        // TODO(b/148645937) move this back to shared_libs
-        "libnativehelper",
+        "libgralloc_headers",
     ],
     cflags: [
         "-Wall",
