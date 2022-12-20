@@ -78,12 +78,13 @@ cc_library_shared {
         "frameworks/native/libs/nativewindow/include",
         "frameworks/native/libs/arect/include",
         "hardware/amlogic/gralloc/amlogic",
+        "hardware/amlogic/gralloc/src",
+        "hardware/amlogic/gralloc/src/include",
         "vendor/amlogic/common/frameworks/services",
     ],
     header_libs: [
         "libhwui_internal_headers",
         "android_graphics_jni_headers",
-        "libgralloc_headers",
     ],
     cflags: [
         "-Wall",
