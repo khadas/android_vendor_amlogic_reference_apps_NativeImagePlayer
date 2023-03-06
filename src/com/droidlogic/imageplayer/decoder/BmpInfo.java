@@ -83,10 +83,10 @@ public class BmpInfo {
         } else return false;
     }
 
-    public boolean renderFrame() {
+    public boolean renderFrame(int fit) {
         boolean ret = false;
         if (mCurrentStatus == Status.DECODE) {
-            ret = ( 0 == mImagePlayer.nativeShow(mNativeBmpPtr));
+            ret = ( 0 == mImagePlayer.nativeShow(mNativeBmpPtr, fit));
             mCurrentStatus = Status.PLAYING;
         }
         return ret;

@@ -16,6 +16,7 @@
  ******************************************************************/
 package com.droidlogic.imageplayer;
 
+import android.graphics.Matrix;
 import android.graphics.PixelFormat;
 import android.widget.Button;
 import android.app.Activity;
@@ -168,7 +169,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
     private final int mOsdHeight = ImagePlayer.getProperties("ro.surface_flinger.max_graphics_height", 1080);
     private String mCurrenAXIS;
     private int mSlideIndex;
-    private int mDegress;
+    private int mDegrees;
     private Uri mUri;
     private boolean paused = false;
     private Handler mUIHandler = new Handler() {
@@ -598,7 +599,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        Log.d(TAG, "onKeyDown" + keyCode + "--" + mMenu.getVisibility() + "--" + mDegress + "--" + event.getRepeatCount());
+        Log.d(TAG, "onKeyDown" + keyCode + "--" + mMenu.getVisibility() + "--" + mDegrees + "--" + event.getRepeatCount());
         if ((keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_DPAD_CENTER)) {
             if (event.getRepeatCount() == 0) {
                 if (mMenu.getVisibility() == View.VISIBLE) {
@@ -627,7 +628,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             if (isScaleModel) {
                 mUIHandler.removeMessages(SHOW_LEFT_ANIM);
                 mUIHandler.sendEmptyMessage(SHOW_LEFT_ANIM);
-                if (!translate(-1, 0)) {
+                if (!translate(-10, 0)) {
                     Toast.makeText(FullImageActivity.this, R.string.not_display, Toast.LENGTH_LONG).show();
                 }
             } else if (event.getRepeatCount() == 0) {
@@ -638,7 +639,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             if (isScaleModel) {
                 mUIHandler.removeMessages(SHOW_TOP_ANIM);
                 mUIHandler.sendEmptyMessage(SHOW_TOP_ANIM);
-                if (!translate(0, -1)) {
+                if (!translate(0, -10)) {
                     Toast.makeText(FullImageActivity.this, R.string.not_display, Toast.LENGTH_LONG).show();
                 }
             }
@@ -647,7 +648,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             if (isScaleModel) {
                 mUIHandler.removeMessages(SHOW_RIGHT_ANIM);
                 mUIHandler.sendEmptyMessage(SHOW_RIGHT_ANIM);
-                if (!translate(1, 0)) {
+                if (!translate(10, 0)) {
                     Toast.makeText(FullImageActivity.this, R.string.not_display, Toast.LENGTH_LONG).show();
                 }
             } else if (event.getRepeatCount() == 0) {
@@ -658,7 +659,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             if (isScaleModel) {
                 mUIHandler.removeMessages(SHOW_BOTTOM_ANIM);
                 mUIHandler.sendEmptyMessage(SHOW_BOTTOM_ANIM);
-                if (!translate(0, 1)) {
+                if (!translate(0, 10)) {
                     Toast.makeText(FullImageActivity.this, R.string.not_display, Toast.LENGTH_LONG).show();
                 }
             }
@@ -692,18 +693,18 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             Log.e(TAG, "rotateRight imageplayer null");
             return;
         }
-        int mPredegree = mDegress;
+        int mPredegree = mDegrees;
         if (right) {
-            mDegress += ROTATION_DEGREE;
+            mDegrees += ROTATION_DEGREE;
         } else {
-            mDegress -= ROTATION_DEGREE;
+            mDegrees -= ROTATION_DEGREE;
         }
-        mDegress = mDegress % 360;
-        Log.d(TAG, "rotate degree " + mPredegree + " --->" + mDegress);
+        mDegrees = mDegrees % 360;
+        Log.d(TAG, "rotate degree " + mPredegree + " --->" + mDegrees);
         if (mScale != SCALE_ORI) {
-            mImagePlayer.setRotateScale((mDegress + 360) % 360,mScale,mScale);
+            mImagePlayer.setRotateScale((mDegrees + 360) % 360,mScale,mScale);
         }else {
-            mImagePlayer.setRotate((mDegress + 360) % 360);
+            mImagePlayer.setRotate((mDegrees + 360) % 360);
         }
     }
 
@@ -714,10 +715,10 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
         int yaxis = y;
         int tempX = mTransferX + xaxis;
         int tempY = mTransferY + yaxis;
-        int step = (int) ((mScale * 10 - SCALE_ORI * 10) / (SCALE_RATIO * 10));
-        if (Math.abs(tempX) > step || Math.abs(tempY) > step) {
-            return false;
-        }
+//        int step = (int) ((mScale * 10 - SCALE_ORI * 10) / (SCALE_RATIO * 10));
+//        if (Math.abs(tempX) > step || Math.abs(tempY) > step) {
+//            return false;
+//        }
         mImagePlayer.setTranslate(tempX , tempY ,mScale);
         mTransferX = tempX;
         mTransferY = tempY;
@@ -766,10 +767,10 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
         if (paused) {return;}
         Log.d(TAG, "prepared");
         mUIHandler.removeMessages(NOT_DISPLAY);
-        if (mDegress != DEFAULT_DEGREE) {
-            mDegress = DEFAULT_DEGREE;
+        if (mDegrees != DEFAULT_DEGREE) {
+            mDegrees = DEFAULT_DEGREE;
         }
-        mImagePlayer.show();
+        mImagePlayer.show(Matrix.ScaleToFit.CENTER.ordinal());
         delaySkip();
     }
 
@@ -778,9 +779,10 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
         setModelEnable(false);
         mScaleStateView.setVisibility(View.INVISIBLE);
         mScale = scale;
-        setScale(mScale);
+        mImagePlayer.restore();
         mTransferX = 0;
         mTransferY = 0;
+        mDegrees = 0;
     }
 
     private void setModelEnable(boolean isEnable) {
@@ -855,13 +857,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
 
         this.mScale = scale;
         if (mImagePlayer != null) {
-            if (mDegress % 360 != 0) {
-                Log.d(TAG, "scale has rotation with " + mDegress);
-               // mImagePlayer.setRotate((mDegress + 360) % 360);
-                mImagePlayer.setRotateScale((mDegress + 360) % 360, mScale, mScale);
-            } else {
-                mImagePlayer.setScale(mScale, mScale);
-            }
+            mImagePlayer.setScale(mScale, mScale);
         }
     }
 

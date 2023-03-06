@@ -30,7 +30,7 @@ import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.widget.FrameLayout;
-
+import android.util.Log;
 import com.droidlogic.app.SystemControlManager;
 
 import java.lang.reflect.Method;
@@ -55,6 +55,7 @@ public class ImagePlayer {
     private PrepareReadyListener mReadyListener;
     private HandlerThread mWorkThread = new HandlerThread("worker",Process.THREAD_PRIORITY_VIDEO);
     private Handler mWorkHandler;
+    private SurfaceControl.Transaction mTransaction;
     private Status mStatus = Status.IDLE;
     private String mImageFilePath;
     private int mDegree;
@@ -84,7 +85,7 @@ public class ImagePlayer {
              if (mSurfaceView == null || mSurfaceView.getSurfaceControl() == null) {
                  mWorkHandler.postDelayed(reshow, 200);
              }else {
-                 show();
+                 show(mShowingFit);
              }
         }
     };
@@ -98,7 +99,7 @@ public class ImagePlayer {
                 long time  = System.currentTimeMillis();
                 boolean decodeOk = mBmpInfoHandler.decode();
                 boolean ready = (mReadyListener != null);
-                Log.d("ImagePlayer","decodeOk"+decodeOk+" ready"+ready);
+                Log.d(TAG,"decodeOk"+decodeOk+" ready"+ready);
                 if (decodeOk && ready) {
                     mStatus = Status.PREPARED;
                     mReadyListener.Prepared();
@@ -113,6 +114,8 @@ public class ImagePlayer {
             }
         }
     };
+    private int mShowingFit = -1;
+
     public boolean CurrentBmpAvailable() {
         if (mBmpInfoHandler != null ) {
             if ((mBmpInfoHandler instanceof GifBmpInfo) &&
@@ -133,7 +136,7 @@ public class ImagePlayer {
                 mBmpInfoHandler = BmpInfoFactory.getBmpInfo(mImageFilePath);
                 mBmpInfoHandler.setImagePlayer(ImagePlayer.this);
                 ret = mBmpInfoHandler.setDataSource(mImageFilePath);
-                Log.d("setDataSource","setDataSource"+mImageFilePath+"@"+mBmpInfoHandler+"----"+ret);
+                Log.d(TAG,"setDataSource"+mImageFilePath+"@"+mBmpInfoHandler+"----"+ret);
                 if (!ret && mBmpInfoHandler instanceof GifBmpInfo) {
                     if (mLastBmpInfo != null) {
                         mLastBmpInfo.release();
@@ -153,10 +156,11 @@ public class ImagePlayer {
         public void run() {
            synchronized(lockObject) {
                 if (mBmpInfoHandler != null) {
-                    Log.d("TAG","releasework"+mBmpInfoHandler);
+                    Log.d(TAG,"releasework"+mBmpInfoHandler);
                     mBmpInfoHandler.release();
                     mBmpInfoHandler = null;
                 }
+                nativeRelease();
            }
         }
     };
@@ -165,23 +169,24 @@ public class ImagePlayer {
         public void run() {
             synchronized(lockObject) {
                 if (bindSurface) {
-                    Log.d(TAG,"mStatus"+mStatus);
+                    Log.d(TAG,"mStatus= "+mStatus + ", mShowingFit= " + mShowingFit);
                     if (mStatus != Status.PREPARED && mStatus != Status.PLAYING) {
                         return;
                     }
                     Log.d("ShowFrame","mBmpInfo"+mBmpInfoHandler+"**"+mBmpInfoHandler.mNativeBmpPtr+"mStatus"+mStatus);
                     if ((mBmpInfoHandler instanceof GifBmpInfo) &&
                             ((GifBmpInfo)mBmpInfoHandler).mFrameCount >0 &&
-                            (mBmpInfoHandler.renderFrame())) {
-                        Log.d("TAG","((GifBmpInfo)mBmpInfoHandler).mFrameCount"+((GifBmpInfo)mBmpInfoHandler).mFrameCount);
+                            (mBmpInfoHandler.renderFrame(mShowingFit))) {
+                        Log.d(TAG,"((GifBmpInfo)mBmpInfoHandler).mFrameCount"+((GifBmpInfo)mBmpInfoHandler).mFrameCount);
                         mStatus = Status.PLAYING;
                         mBmpInfoHandler.decodeNext();
                         mWorkHandler.postDelayed(ShowFrame, 200);
                         if (mReadyListener != null ) {
                             mReadyListener.played();
                         }
-                    }else if ((mBmpInfoHandler.mNativeBmpPtr != 0) && mBmpInfoHandler.renderFrame()){
+                    }else if ((mBmpInfoHandler.mNativeBmpPtr != 0) && mBmpInfoHandler.renderFrame(mShowingFit)){
                         mStatus = Status.PLAYING;
+                        mShowingFit = -1;
                         if (mReadyListener != null ) {
                             mReadyListener.played();
                         }
@@ -196,6 +201,7 @@ public class ImagePlayer {
     private ImagePlayer() {
         mWorkThread.start();
         mWorkHandler = new Handler(mWorkThread.getLooper());
+        mTransaction = new SurfaceControl.Transaction();
     }
 
     public synchronized static ImagePlayer getInstance() {
@@ -205,11 +211,15 @@ public class ImagePlayer {
         return mImagePlayerInstance;
     }
     public native static void  nativeReset();
+    public native static void  nativeRestore();
+    public native static void  nativeRelease();
     public native static int nativeScale(float sx, float sy, boolean redraw);
 
-    public native static int nativeShow(long bmphandler);
+    public native static int nativeShow(long bmphandler, int fit);
 
     public native static int nativeRotate(int ori, boolean redraw);
+
+    public native static int nativeTranslate(float x, float y, boolean redraw);
 
     public native static int nativeRotateScaleCrop(int ori, float sx, float sy, boolean redraw);
 
@@ -234,13 +244,13 @@ public class ImagePlayer {
     }
 
     public void bindSurface(SurfaceHolder holder) {
-        bindSurface(holder.getSurface(), mOsdWidth, mOsdHeight);
+        bindSurface(holder.getSurface(), mSurfaceView.getWidth(), mSurfaceView.getHeight());
         bindSurface = true;
     }
     private Point getInitialFrameSize() {
         int srcW = getBmpWidth();
         int srcH = getBmpHeight();
-        Log.d("TAG","getInitalFrameSize"+srcW+"x"+srcH+" - "+mDegree);
+        Log.d(TAG,"getInitalFrameSize"+srcW+"x"+srcH+" - "+mDegree);
         if ((mDegree / ROTATION_DEGREE) % 2 != 0) {
             srcW = getBmpHeight();
             srcH = getBmpWidth();
@@ -272,11 +282,22 @@ public class ImagePlayer {
          }
          return false;
     }
+
     public boolean show() {
+        return show(-1);
+    }
+
+
+    /**
+     * @param fit Using {@link Matrix.ScaleToFit#ordinal()}, -1 for default action
+     * @return
+     */
+    public boolean show(int fit) {
         Log.d(TAG,"show"+mStatus+" "+mSurfaceView);
         if (mStatus != Status.PREPARED) {
             return false;
         }
+        mShowingFit = fit;
         if (mSurfaceView == null || mSurfaceView.getSurfaceControl() == null) {
            mWorkHandler.postDelayed(reshow, 200);
            return false;
@@ -298,21 +319,10 @@ public class ImagePlayer {
         int frameHeight = (int)(mSurfaceHeight*sy);
         int top = (mOsdHeight - frameHeight)/2;
         int left = (mOsdWidth - frameWidth)/2;
-        Log.d(TAG, "setPaintSize: frameWidth= " + frameWidth + ", frameHeight= " + frameHeight);
-        Log.d("TAG","setPaintSize ["+left+", "+top+", "+(left+frameWidth)+", "+(top+frameHeight)+"] mSurfaceView"+mSurfaceView);
-
-        new Handler(Looper.getMainLooper()).post(()->{
-            FrameLayout.LayoutParams params = new FrameLayout.LayoutParams(frameWidth, frameHeight);
-            params.gravity = Gravity.CENTER;
-            params.leftMargin = params.rightMargin = left;
-            params.topMargin = params.bottomMargin = top;
-            mSurfaceView.setLayoutParams(params);
-        });
-
+        Log.d(TAG,"setPaintSize: "+left+"-"+top+"-"+(left+frameWidth)+"-"+(top+frameHeight)+" mSurfaceView"+mSurfaceView);
 //        SurfaceControl sc = mSurfaceView.getSurfaceControl();
-//        new SurfaceControl.Transaction().setVisibility(sc, true)
-//                        .setGeometry(sc, null,
-//                                new Rect(left, top, left+frameWidth, top+frameHeight), Surface.ROTATION_0)
+//        mTransaction.setVisibility(sc, true)
+//                        .setGeometry(sc, null, new Rect(left, top, left+frameWidth, top+frameHeight), Surface.ROTATION_0)
 //                        .setBufferSize(sc,frameWidth,frameHeight)
 //                        .apply();
     }
@@ -343,63 +353,73 @@ public class ImagePlayer {
     }
 
     public int setScale(float sx, float sy) {
-       /*boolean redraw = true;
+       boolean redraw = true;
         synchronized(lockObject) {
-
             if (mBmpInfoHandler instanceof GifBmpInfo) {
                 redraw = false;
             }
             nativeScale(sx, sy, redraw);
-        }*/
-
-        setPaintSize(sx,sy);
+        }
+        //setPaintSize(sx,sy);
         return 0;
     }
 
     public int setTranslate(int xpos,int ypos, float scale) {
-        mWorkHandler.removeCallbacks(ShowFrame);
-        int frameWidth = (int)(mSurfaceWidth*scale);
-        int frameHeight = (int)(mSurfaceHeight*scale);
-        int top = (mOsdHeight - frameHeight)/2;
-        int left = (mOsdWidth - frameWidth)/2;
-        Log.d("TAG","setTranslate("+xpos+" "+ypos+")top "+top+" left "+left+" scale "+scale);
-        if (left > 0) {
-            xpos = 0;
+        boolean redraw = true;
+        synchronized(lockObject) {
+            if (mBmpInfoHandler instanceof GifBmpInfo) {
+                redraw = false;
+            }
+            nativeTranslate(xpos, ypos, redraw);
         }
-        if (top > 0) {
-            ypos = 0;
-        }
-        if (xpos == 0 && ypos == 0) return -1;
-        int step = (int)((scale*10-10)/2);
-        int xStep = Math.abs(left/step);
-        int yStep = Math.abs(top/step);
-        Log.d("TAG","step"+step+" "+xStep+ "yStep"+yStep);
-        top -= ypos*yStep;
-        left -= xpos*xStep;
-        Log.d("TAG","top"+top+"left"+left+"step"+step);
-        if (Math.abs(xpos) == step || Math.abs(ypos) == step) {
-            if (xpos == -step) {
-                left = 0;
-            }
-            if (ypos == -step) {
-                top = 0;
-            }
-            if (xpos == step) {
-                left = (mOsdWidth - frameWidth);
-            }
-            if (ypos == step) {
-                top = (mOsdHeight - frameHeight);
-            }
-        }
-
-        Log.d("TAG","setPaintSize("+left+" "+top+" "+(left+frameWidth)+" "+(top+frameHeight)+")");
-        SurfaceControl sc = mSurfaceView.getSurfaceControl();
-        new SurfaceControl.Transaction().setVisibility(sc, true)
-                        .setGeometry(sc, null, new Rect(left, top, left+frameWidth, top+frameHeight), Surface.ROTATION_0)
-                        .setBufferSize(sc,frameWidth,frameHeight)
-                        .apply();
+//        mWorkHandler.removeCallbacks(ShowFrame);
+//        int frameWidth = (int)(mSurfaceWidth*scale);
+//        int frameHeight = (int)(mSurfaceHeight*scale);
+//        int top = (mOsdHeight - frameHeight)/2;
+//        int left = (mOsdWidth - frameWidth)/2;
+//        Log.d(TAG,"setTranslate("+xpos+" "+ypos+")top "+top+" left "+left+" scale "+scale);
+//        if (left > 0) {
+//            xpos = 0;
+//        }
+//        if (top > 0) {
+//            ypos = 0;
+//        }
+//        if (xpos == 0 && ypos == 0) return -1;
+//        int step = (int)((scale*10-10)/2);
+//        int xStep = Math.abs(left/step);
+//        int yStep = Math.abs(top/step);
+//        Log.d(TAG,"step"+step+" "+xStep+ "yStep"+yStep);
+//        top -= ypos*yStep;
+//        left -= xpos*xStep;
+//        Log.d(TAG,"top"+top+"left"+left+"step"+step);
+//        if (Math.abs(xpos) == step || Math.abs(ypos) == step) {
+//            if (xpos == -step) {
+//                left = 0;
+//            }
+//            if (ypos == -step) {
+//                top = 0;
+//            }
+//            if (xpos == step) {
+//                left = (mOsdWidth - frameWidth);
+//            }
+//            if (ypos == step) {
+//                top = (mOsdHeight - frameHeight);
+//            }
+//        }
+//
+//        Log.d(TAG,"setTranslate, ("+left+" "+top+" "+(left+frameWidth)+" "+(top+frameHeight)+")");
+//        SurfaceControl sc = mSurfaceView.getSurfaceControl();
+//        mTransaction.setVisibility(sc, true)
+//                        .setGeometry(sc, null, new Rect(left, top, left+frameWidth, top+frameHeight), Surface.ROTATION_0)
+//                        .setBufferSize(sc,frameWidth,frameHeight)
+//                        .apply();
         return 0;
     }
+
+    public void restore() {
+        nativeRestore();
+    }
+
     private Runnable rotateCropWork = new Runnable() {
          @Override
         public void run() {
@@ -464,7 +484,7 @@ public class ImagePlayer {
             initVideoParam();
         }
     }
-    private native void bindSurface(Surface surface, int screenWidth, int screenHeight);
+    private native void bindSurface(Surface surface, int surfaceWidth, int surfaceHeight);
 
     private native void nativeUnbindSurface();
 

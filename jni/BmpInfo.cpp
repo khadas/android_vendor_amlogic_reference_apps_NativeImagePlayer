@@ -277,9 +277,9 @@ void nativeRelease(JNIEnv *env, jobject obj1,jlong nativePtr){
     long bmp = env->GetLongField(obj1,bmphandler);
     ALOGE("nativeRelease %ld",bmp);
     if (bmp != 0) {
-        auto ptr= reinterpret_cast<VBitmap*>(bmp);
         env->SetLongField(obj1,bmphandler,0);
-        delete ptr;
+        auto ptr= reinterpret_cast<VBitmap*>(bmp);
+        SkSafeUnref(ptr);
     }
 }
 
