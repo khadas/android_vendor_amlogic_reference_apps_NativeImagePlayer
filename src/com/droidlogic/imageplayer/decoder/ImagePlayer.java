@@ -244,7 +244,19 @@ public class ImagePlayer {
     }
 
     public void bindSurface(SurfaceHolder holder) {
-        bindSurface(holder.getSurface(), mSurfaceView.getWidth(), mSurfaceView.getHeight());
+        int surfaceWidth = 0;
+        int surfaceHeight = 0;
+        if (mScreenWidth > 0 && mScreenHeight > 0) {
+            surfaceWidth = mScreenWidth;
+            surfaceHeight = mScreenHeight;
+        } else {
+            surfaceWidth = mSurfaceView.getWidth();
+            surfaceHeight = mSurfaceView.getHeight();
+            Log.w(TAG, "bindSurface, Can not recognized screen size, using view size");
+        }
+
+        Log.i(TAG, "bindSurface, Screen size: [" + surfaceWidth + " x " + surfaceHeight + "]");
+        bindSurface(holder.getSurface(), surfaceWidth, surfaceHeight);
         bindSurface = true;
     }
     private Point getInitialFrameSize() {
