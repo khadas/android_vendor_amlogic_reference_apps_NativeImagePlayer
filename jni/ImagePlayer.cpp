@@ -23,6 +23,7 @@ using namespace android;
 #define DEFAULT_HEIGHT 1080
 #define GRALLOC1_VIDEO 1ULL << 17
 #define PROPERTY "vendor.display-size"
+#define PROP_DUMP_IMAGE_PATH "debug.image_player.dump_path"
 #define ODS_WIDTH_PROPERTY "ro.surface_flinger.max_graphics_width"
 #define ODS_HEIGHT_PROPERTY "ro.surface_flinger.max_graphics_height"
 sp<ANativeWindow> mNativeWindow = nullptr;
@@ -347,6 +348,13 @@ static int render(int32_t width, int32_t height, void *data, size_t inLen, SkCol
     if (!isShown) return -1;
     imageplayer->rgbToYuv420(pixelBuffer, width, height, yPlane,
                     uPlane, vPlane, chromaStep, yStride, chromaStride, colorType);
+
+    const std::string dumpPath = android::base::GetProperty(std::string(PROP_DUMP_IMAGE_PATH), "");
+    bool dump = !dumpPath.empty() && (access(dumpPath.c_str(), F_OK) == 0);
+    ALOGI("Debug path: %s, dump: %d", dumpPath.c_str(), dump);
+    if (dump) {
+        imageplayer->saveBmp((const char*)img,dumpPath.c_str(), buf->height* buf->stride*3/2);
+    }
 //    mMemory.releaseMem();
 //    if (isShown && !mMemory.allocmem(buf->height*buf->width *3)) {
 //        ALOGE("----------allocate----------");

@@ -181,6 +181,24 @@ void ImageOperator::stopShown() {
     ALOGE("---------stopShown--------");
     isShown = false;
 }
+void ImageOperator::saveBmp(const char *buf, const char* url,int size) {
+    int fd = -1;
+    int length = 0;
+    int write_num = 0;
+    unsigned int *value;
+
+    fd = open(url,O_RDWR | O_CREAT,0660);
+    if (fd < 0) {
+        ALOGE("write file:%s open error\n",url);
+        return;
+    }
+
+    write_num = write(fd, buf, size);
+    if (write_num <= 0) {
+        ALOGE("write file write_num=%d error\n",write_num);
+    }
+    close(fd);
+}
 int ImageOperator::show(void *displayAddr) {
     if (mbitmap.mNativeHandler < 0 ) {
         return IMG_INVALIDE;
