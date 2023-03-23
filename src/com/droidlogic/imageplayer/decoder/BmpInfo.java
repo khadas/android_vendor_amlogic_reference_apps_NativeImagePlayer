@@ -56,7 +56,7 @@ public class BmpInfo {
     }
 
     public boolean decode() {
-        if (mDecoderPtr > 0) {
+        if (mDecoderPtr != 0) {
             int tempWidth = mImagePlayer.getMxW();
             int tempHeight = mImagePlayer.getMxH();
             Log.d("TAG", "mBmpWidth" + mBmpWidth + "mTargetWidth" + tempWidth+"-"+mBmpHeight+":"+tempHeight);
