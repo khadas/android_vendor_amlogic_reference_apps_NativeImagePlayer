@@ -24,7 +24,7 @@ public class GifBmpInfo extends BmpInfo {
         boolean ret = false;
         Log.d(TAG, "renderFrame" + mNativeBmpPtr+" mCurrentStatus"+mCurrentStatus);
         if (mCurrentStatus == Status.DECODE||mCurrentStatus == Status.PLAYING) {
-            ret = ( 0 == mImagePlayer.nativeShow(mNativeBmpPtr, fit));
+            ret = ( 0 == mImagePlayer.nativeShow(mNativeBmpPtr, fit, true));
             mCurrentStatus = Status.PLAYING;
         }
         Log.d(TAG, "renderFrame ret" + ret);

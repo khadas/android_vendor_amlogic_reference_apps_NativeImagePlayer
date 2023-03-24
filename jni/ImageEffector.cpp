@@ -48,16 +48,26 @@ void ImageEffector::onLastStrongRef(const void *id) {
     release();
 }
 
-bool ImageEffector::setImage(SkBitmap *bitmap, int fit, bool show) {
+bool ImageEffector::setImage(SkBitmap *bitmap, int fit, bool show, bool movie) {
     if (bitmap == nullptr || bitmap->isNull()) {
         ALOGE("Invalid bitmap ref");
         return false;
     }
 
+    ALOGD("setImage, movie= %d, mFrontImageInfo.isValid(): %d", movie, mFrontImageInfo.isValid());
+
     if (mFrontImageInfo.isValid()) {
-        mFrontImageInfo.reset();
+        if (movie && (mIsLastTypeMovie == movie)) {
+            // Reset data only for movie
+            ALOGD("Reset data only for movie");
+            mFrontImageInfo.resetData();
+        } else {
+            ALOGD("Reset all for image changed");
+            mFrontImageInfo.reset();
+        }
     }
 
+    mIsLastTypeMovie = movie;
     mFit = fit;
     mFrontImageInfo.image = std::make_shared<SkBitmap>(*bitmap);
     mFrontImageInfo.width = bitmap->width();

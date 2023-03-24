@@ -338,9 +338,15 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
         }
 
         mUri = intent.getData();
-
         if (mUri == null) {
             Log.e(TAG, "onCreate uri null! ");
+            finish();
+            return;
+        }
+
+        Log.d(TAG, "mUri= " + mUri);
+        if (!isValidImage(mUri)) {
+            toastMessage("File can not be opened");
             finish();
             return;
         }
@@ -407,7 +413,12 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             if (file.exists() && file.isFile()/* && (file.getName().toUpperCase().endsWith(".JPG") ||
                     file.getName().toUpperCase().endsWith(".PNG")
                     ||  file.getName().toUpperCase().endsWith(".JPEG"))*/) {
-                items.add(Uri.fromFile(file));
+                Uri itemUri = Uri.fromFile(file);
+                if (!isValidImage(uri)) {
+                    continue;
+                }
+
+                items.add(itemUri);
             }
         }
         for (int i = 0; i < items.size(); i++) {
@@ -417,6 +428,25 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             }
         }
         return items;
+    }
+
+    private boolean isValidImage(Uri uri) {
+        String path = getPathByUri(uri);
+        if (path == null) {
+            return false;
+        }
+        int lastDot = path.lastIndexOf('.');
+        if (lastDot >= 0) {
+            String ext = path.substring(lastDot + 1);
+            return isImageExt(ext);
+        } else {
+            return false;
+        }
+    }
+
+    private boolean isImageExt(String ext) {
+        Log.d(TAG, "isImageExt, ext= " + ext);
+        return true;
     }
 
     public String getPathByUri(Uri uri) {

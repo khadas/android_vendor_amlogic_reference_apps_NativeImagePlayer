@@ -84,7 +84,7 @@ public class ImagePlayer {
         public void run() {
              if (mSurfaceView == null || mSurfaceView.getSurfaceControl() == null) {
                  mWorkHandler.postDelayed(reshow, 200);
-             }else {
+             } else {
                  show(mShowingFit);
              }
         }
@@ -180,7 +180,7 @@ public class ImagePlayer {
                         Log.d(TAG,"((GifBmpInfo)mBmpInfoHandler).mFrameCount"+((GifBmpInfo)mBmpInfoHandler).mFrameCount);
                         mStatus = Status.PLAYING;
                         mBmpInfoHandler.decodeNext();
-                        mWorkHandler.postDelayed(ShowFrame, 200);
+                        mWorkHandler.postDelayed(ShowFrame, 16);
                         if (mReadyListener != null ) {
                             mReadyListener.played();
                         }
@@ -215,7 +215,7 @@ public class ImagePlayer {
     public native static void  nativeRelease();
     public native static int nativeScale(float sx, float sy, boolean redraw);
 
-    public native static int nativeShow(long bmphandler, int fit);
+    public native static int nativeShow(long bmphandler, int fit, boolean isMovie);
 
     public native static int nativeRotate(int ori, boolean redraw);
 
@@ -349,11 +349,6 @@ public class ImagePlayer {
     public int setRotate(int degrees) {
         mWorkHandler.removeCallbacks(rotateWork);
         boolean redraw = true;
-        synchronized(lockObject) {
-            if (mBmpInfoHandler instanceof GifBmpInfo) {
-                redraw = false;
-            }
-        }
         mDegree = degrees;
         mredraw = redraw;
         mWorkHandler.post(rotateWork);
@@ -367,9 +362,6 @@ public class ImagePlayer {
     public int setScale(float sx, float sy) {
        boolean redraw = true;
         synchronized(lockObject) {
-            if (mBmpInfoHandler instanceof GifBmpInfo) {
-                redraw = false;
-            }
             nativeScale(sx, sy, redraw);
         }
         //setPaintSize(sx,sy);
@@ -379,9 +371,6 @@ public class ImagePlayer {
     public int setTranslate(int xpos,int ypos, float scale) {
         boolean redraw = true;
         synchronized(lockObject) {
-            if (mBmpInfoHandler instanceof GifBmpInfo) {
-                redraw = false;
-            }
             nativeTranslate(xpos, ypos, redraw);
         }
 //        mWorkHandler.removeCallbacks(ShowFrame);
@@ -443,11 +432,6 @@ public class ImagePlayer {
     public int setRotateScale(int degrees, float sx, float sy) {
         mWorkHandler.removeCallbacks(rotateCropWork);
         boolean redraw = true;
-        synchronized(lockObject) {
-            if (mBmpInfoHandler instanceof GifBmpInfo) {
-                redraw = false;
-            }
-        }
         mDegree = degrees;
         mSx = mSx;
         mSy = mSy;

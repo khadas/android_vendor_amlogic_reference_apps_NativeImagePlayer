@@ -40,7 +40,7 @@ public:
         return mScreenBitmap;
     }
 
-    bool setImage(SkBitmap *bitmap, int fit = -1, bool show = true);
+    bool setImage(SkBitmap *bitmap, int fit = -1, bool show = true, bool movie = false);
     bool scale(float sX, float sY, bool show = true);
     bool rotate(float rotation, bool keepScale = false, bool show = true);
     bool translate(float x, float y, bool show = true);
@@ -63,18 +63,26 @@ private:
             return width > 0 && height > 0 && image != nullptr && !image->isNull();
         }
 
-        void reset() {
+        void resetData() {
             if (image != nullptr && !image->isNull()) {
                 image->reset();
                 image = nullptr;
             }
             width = 0;
             height = 0;
+        }
+
+        void resetEffect() {
             rotation = -1;
             scaleX = 1;
             scaleY = 1;
             translateX = 0;
             translateY = 0;
+        }
+
+        void reset() {
+            resetData();
+            resetEffect();
         }
     };
 
@@ -95,6 +103,7 @@ private:
     int32_t mScreenWidth;
     int32_t mScreenHeight;
     int32_t mFit;
+    bool mIsLastTypeMovie{false};
 
     SkBitmap mScreenBitmap;
     SkRect mScreenRect;

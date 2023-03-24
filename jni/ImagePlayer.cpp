@@ -398,7 +398,7 @@ static int renderEmpty(int32_t width, int32_t height) {
     return 0;
 }
 
-static jint nativeShow(JNIEnv *env, jclass clz, jlong jbitmap, int fit){
+static jint nativeShow(JNIEnv *env, jclass clz, jlong jbitmap, int fit, jboolean movie){
     ALOGE("nativeShow %d %d %d",(mNativeWindow.get() == NULL),(imageplayer == NULL),(jbitmap ==0));
 
     if (mNativeWindow.get() == NULL || imageplayer == NULL || jbitmap ==0 ) {
@@ -412,7 +412,7 @@ static jint nativeShow(JNIEnv *env, jclass clz, jlong jbitmap, int fit){
     bitmap->getSkBitmap(&skbitmap);
     ALOGE("skColorType %d %d %d",bitmap->colorType(),bitmap->width(),bitmap->height());
 
-    if (mEffector->setImage(&skbitmap, fit)) {
+    if (mEffector->setImage(&skbitmap, fit, true, movie)) {
         auto bmp = mEffector->bitmap();
         uint8_t* pixelBuffer = (uint8_t*)mEffector->bitmap().getPixels();
         mLastWidth = 0;
@@ -648,7 +648,7 @@ static const JNINativeMethod gImagePlayerMethod[] = {
     {"initParam",           "()I",     (void*)initParam},
     {"bindSurface",           "(Landroid/view/Surface;II)V",          (void*)bindSurface },
     {"nativeUnbindSurface",           "()V",          (void*)unbindSurface },
-    {"nativeShow",                "(JI)I",                               (void*)nativeShow },
+    {"nativeShow",                "(JIZ)I",                               (void*)nativeShow },
     {"nativeScale",               "(FFZ)I",                             (void*)nativeScale},
     {"nativeRotate",              "(IZ)I",                               (void*)rotate},
     {"nativeRotateScaleCrop",           "(IFFZ)I",                      (void*)rotateScaleCrop},
