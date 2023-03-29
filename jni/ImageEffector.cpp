@@ -18,6 +18,8 @@
 
 #include "ImageEffector.h"
 #include <utils/Log.h>
+#include <SkPixelRef.h>
+#include <SkRefCnt.h>
 
 #define FUNC_E() ALOGD("%s EEE", __FUNCTION__ )
 #define FUNC_X() ALOGD("%s XXX", __FUNCTION__ )
@@ -69,7 +71,12 @@ bool ImageEffector::setImage(SkBitmap *bitmap, int fit, bool show, bool movie) {
 
     mIsLastTypeMovie = movie;
     mFit = fit;
-    mFrontImageInfo.image = std::make_shared<SkBitmap>(*bitmap);
+
+    auto uniqueBmp = std::make_unique<SkBitmap>();
+    uniqueBmp->setInfo(bitmap->info(), bitmap->rowBytes());
+    uniqueBmp->setPixelRef(sk_ref_sp(bitmap->pixelRef()), 0, 0);
+    mFrontImageInfo.image = std::move(uniqueBmp);
+
     mFrontImageInfo.width = bitmap->width();
     mFrontImageInfo.height = bitmap->height();
 
@@ -219,7 +226,19 @@ void ImageEffector::render() {
         canvas.clipRect(currentRect);
         canvas.setMatrix(finalMatrix);
 
-        canvas.drawImage(mFrontImageInfo.image->asImage(), 0, 0);
+        SkPaint paint;
+        paint.setAntiAlias(true);
+        paint.setDither(true);
+
+        bool filter = finalMatrix.getScaleX() != SK_Scalar1 || finalMatrix.getScaleY() != SK_Scalar1;
+        // Do not filter for movie(eg: git), or frame will jank.
+        filter &= !mIsLastTypeMovie;
+
+        ALOGD("render, scaleX= %f, scaleY= %f, filter= %d", finalMatrix.getScaleX(), finalMatrix.getScaleY(), filter);
+
+        canvas.drawImage(mFrontImageInfo.image->asImage(), 0, 0,
+                SkSamplingOptions(filter ? SkFilterMode::kLinear : SkFilterMode::kNearest),
+                &paint);
 
         canvas.restore();
     }
@@ -294,6 +313,9 @@ void ImageEffector::reset() {
 }
 
 SkMatrix::ScaleToFit ImageEffector::iToFit(int iFit) {
+    if (iFit < 0 || iFit > 3) {
+        return SkMatrix::ScaleToFit::kCenter_ScaleToFit;
+    }
     return static_cast<SkMatrix::ScaleToFit>(iFit);
 }
 

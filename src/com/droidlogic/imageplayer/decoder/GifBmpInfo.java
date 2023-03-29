@@ -37,6 +37,7 @@ public class GifBmpInfo extends BmpInfo {
         this.filePath = filePath;
         File file = new File(filePath);
         if (!file.canRead()) {
+            Log.e(TAG, "File `" + filePath + "` can not be read");
             return false;
         }
         try {
@@ -46,7 +47,7 @@ public class GifBmpInfo extends BmpInfo {
             mDecoderPtr = nativeSetGif(filePath);
              mCurrentStatus = Status.SETDATASOURCE;
             if (mFrameCount <= 1) return false;
-            if (mDecoderPtr <= 0) return false;
+            if (mDecoderPtr == 0) return false;
         } catch (Exception e) {
             e.printStackTrace();
             return false;

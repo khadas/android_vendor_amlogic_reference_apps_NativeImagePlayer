@@ -249,7 +249,8 @@ static int rotate(JNIEnv *env, jclass clz,jint rotation, jboolean redraw) {
 }
 static int reRender(int32_t width, int32_t height, void *data, size_t inLen, SkColorType colorType) {
     status_t err = NO_ERROR;
-    int frame_width = ((width + 1) & ~1);
+    int bmpWidth = ((width + 1) & ~1);
+    int frame_width = GRALLOC_ALIGN(bmpWidth, 32);
     int frame_height =((height + 1) & ~1);
     ALOGE("Repeat render for frame size (%d x %d)-->(%d x %d)",width,height,frame_width,frame_height);
     ANativeWindowBuffer *buf;
@@ -313,8 +314,10 @@ static int reRender(int32_t width, int32_t height, void *data, size_t inLen, SkC
 static int render(int32_t width, int32_t height, void *data, size_t inLen, SkColorType colorType ) {
     GraphicBufferMapper &mapper = GraphicBufferMapper::get();
     status_t err = NO_ERROR;
-    int frame_width = ((width + 1) & ~1);
+    int bmpWidth = ((width + 1) & ~1);
+    int frame_width = GRALLOC_ALIGN(bmpWidth, 32);
     int frame_height =((height + 1) & ~1);
+    bool clearBuffer = bmpWidth != frame_width;
     ALOGE("render for frame size (%d x %d)-->(%d x %d)",width,height,frame_width,frame_height);
     ANativeWindowBuffer *buf;
     native_window_set_buffers_dimensions(mNativeWindow.get(), frame_width, frame_height);
@@ -337,7 +340,13 @@ static int render(int32_t width, int32_t height, void *data, size_t inLen, SkCol
         return err;
     }
     if (img == NULL) return -1;
-    memset(img, 128, buf->height * buf->stride*3/2);
+
+    if (clearBuffer) {
+        int yLen = buf->height * buf->stride;
+        memset(img, 0, yLen);
+        memset(img + yLen, 128, yLen/2);
+    }
+
     uint8_t* yPlane = img;
     uint8_t* uPlane = img + buf->stride*buf->height;
     uint8_t* vPlane = uPlane + 1;

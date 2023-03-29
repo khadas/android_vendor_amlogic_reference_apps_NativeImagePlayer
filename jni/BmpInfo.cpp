@@ -177,13 +177,14 @@ bool decodeInner(JNIEnv *env, jobject obj1, jlong nativePtr, jint targetWidth, j
         targetWidth = targetHeight;
         targetHeight = temVal;
     }*/
-    if (imageWidth > SURFACE_4K_WIDTH || imageHeight > SURFACE_4K_HEIGHT) {
-        float scaleVal = 1.0f*imageWidth/SURFACE_4K_WIDTH > 1.0f*imageHeight/SURFACE_4K_HEIGHT ?
-                            1.0f*imageWidth/SURFACE_4K_WIDTH : 1.0f*imageHeight/SURFACE_4K_HEIGHT;
-        sampleSize = round(scaleVal);
-    }else if (imageWidth > targetWidth && imageWidth/targetWidth == imageHeight/targetHeight) {
-        sampleSize = round(SURFACE_4K_WIDTH/targetWidth);
-    }
+
+//    if (imageWidth > SURFACE_4K_WIDTH || imageHeight > SURFACE_4K_HEIGHT) {
+//        float scaleVal = 1.0f*imageWidth/SURFACE_4K_WIDTH > 1.0f*imageHeight/SURFACE_4K_HEIGHT ?
+//                            1.0f*imageWidth/SURFACE_4K_WIDTH : 1.0f*imageHeight/SURFACE_4K_HEIGHT;
+//        sampleSize = round(scaleVal);
+//    }else if (imageWidth > targetWidth && imageWidth/targetWidth == imageHeight/targetHeight) {
+//        sampleSize = round(SURFACE_4K_WIDTH/targetWidth);
+//    }
 
     SkColorType colorType = imageInfo.colorType();
     ALOGI("colorType : %d",colorType);
@@ -238,35 +239,8 @@ bool decodeInner(JNIEnv *env, jobject obj1, jlong nativePtr, jint targetWidth, j
     }while(retry);
     jclass bmpinfo = FindClassOrDie(env,"com/droidlogic/imageplayer/decoder/BmpInfo");
     bmphandler = GetFieldIDOrDie(env,bmpinfo,"mNativeBmpPtr","J");
-    if (targetWidth != scaleWidth && targetHeight != scaleHeight) {
-        ALOGD("cover height and width %dx%d->%dx%d",scaleWidth,scaleHeight,targetWidth,targetHeight);
-        SkBitmap devBitmap;
-        SkImageInfo devinfo = SkImageInfo::Make(targetWidth, targetHeight,
-                                                 colorType, bmp.alphaType());
-
-        devBitmap.setInfo(devinfo);
-        sk_sp<VBitmap> devNativeBitmap = VBitmap::allocateAshmemBitmap(&devBitmap);
-        SkRect srcRect = SkRect::MakeLTRB(0,0,scaleWidth, scaleHeight);
-        SkRect destRect = SkRect::MakeLTRB(0,0,targetWidth, targetHeight);
-        SkCanvas *canvas =  new SkCanvas(devBitmap);
-        SkPaint paint;
-        paint.setAntiAlias(true);
-        paint.setDither(true);
-        canvas->save();
-
-        auto image = bmp.asImage();
-        auto sampling = SkSamplingOptions();
-        canvas->drawImageRect(image, srcRect, destRect, sampling, &paint,
-                               SkCanvas::kFast_SrcRectConstraint);
-
-        canvas->restore();
-        delete canvas;
-        devNativeBitmap->setImmutable();
-        env->SetLongField(obj1,bmphandler,reinterpret_cast<jlong>(devNativeBitmap.release()));
-    }else {
-        nativeBitmap->setImmutable();
-        env->SetLongField(obj1,bmphandler,reinterpret_cast<jlong>(nativeBitmap.release()));
-    }
+    nativeBitmap->setImmutable();
+    env->SetLongField(obj1,bmphandler,reinterpret_cast<jlong>(nativeBitmap.release()));
     return true;
   }
 bool nativeRenderFrame(JNIEnv *env, jobject obj1){

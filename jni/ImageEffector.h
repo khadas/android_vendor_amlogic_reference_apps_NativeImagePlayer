@@ -50,7 +50,7 @@ public:
 private:
     class FrontImageInfo {
     public:
-        std::shared_ptr<SkBitmap> image = nullptr;
+        std::unique_ptr<SkBitmap> image = nullptr;
         int32_t width;
         int32_t height;
         float rotation = -1;

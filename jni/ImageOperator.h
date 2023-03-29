@@ -49,6 +49,9 @@
 using namespace android;
 #define IMG_INVALIDE  -1
 #define OPT_SUCCESS 0
+
+#define GRALLOC_ALIGN(value, base) ((((value) + (base) -1) / (base)) * (base))
+
 typedef struct{
     __int64_t mNativeHandler;
     int width;

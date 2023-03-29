@@ -13,11 +13,16 @@
      limitations under the License.
 -->
 <set xmlns:android="http://schemas.android.com/apk/res/android">
-    <translate
+    <alpha
         android:duration="300"
-        android:fillBefore="true"
-        android:fromXDelta="0"
-        android:fromYDelta="0"
-        android:toXDelta="0"
-        android:toYDelta="200" />
+        android:fromAlpha="1.0"
+        android:toAlpha="0.0"
+        />
+<!--    <translate-->
+<!--        android:duration="300"-->
+<!--        android:fillBefore="true"-->
+<!--        android:fromXDelta="0"-->
+<!--        android:fromYDelta="0"-->
+<!--        android:toXDelta="0"-->
+<!--        android:toYDelta="200" />-->
 </set>
