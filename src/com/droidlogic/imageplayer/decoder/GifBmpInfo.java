@@ -45,6 +45,10 @@ public class GifBmpInfo extends BmpInfo {
             Log.e(TAG, "File `" + filePath + "` can not be read");
             return false;
         }
+        if (mCurrentStatus == Status.PLAYING || mCurrentStatus == Status.DECODE) {
+            Log.d(TAG, "cannot setDataSource playing need stop first" );
+            return false;
+        }
         try {
             mDecoderPtr = 0;
             mFrameCount = 0;
@@ -92,6 +96,7 @@ public class GifBmpInfo extends BmpInfo {
         mCurrentId = 0;
         if (mCurrentStatus == Status.DECODE || mCurrentStatus == Status.PLAYING)
             nativeReleaseLastFrame(mDecoderPtr);
+        mCurrentStatus = Status.STOP;
     }
     private native void nativeReleaseLastFrame(long decoder);
     private native long nativeSetGif(String filepath);

@@ -770,18 +770,26 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
     }
 
     @Override
-    public void played() {
+    public void played(String uriStr) {
         if (mLoadingProgress.getVisibility() == View.VISIBLE) {
             runOnUiThread(() -> {
                 mLoadingProgress.setVisibility(View.GONE);
             });
         }
+        if (mCurPicPath != uriStr) {
+            Log.d(TAG, "not current uri,return directly");
+            return;
+        }
         mImagePlayer.setPrepareListener(null);
     }
 
     @Override
-    public void playerr() {
+    public void playerr(String uriStr) {
         if (paused) {return;}
+        if (mCurPicPath != uriStr) {
+            Log.d(TAG, "not current uri,return directly");
+            return;
+        }
         Log.d(TAG, "play error");
         mScale = SCALE_ORI;
         mImagePlayer.nativeReset();
@@ -793,8 +801,12 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
     }
 
     @Override
-    public void Prepared() {
+    public void Prepared(String uriStr) {
         if (paused) {return;}
+        if (mCurPicPath != uriStr) {
+            Log.d(TAG, "not current uri,return directly");
+            return;
+        }
         Log.d(TAG, "prepared");
         mUIHandler.removeMessages(NOT_DISPLAY);
         if (mDegrees != DEFAULT_DEGREE) {

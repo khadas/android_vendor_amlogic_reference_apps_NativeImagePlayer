@@ -73,7 +73,7 @@ public class ImagePlayer {
             boolean ready = (mReadyListener != null);
             if (ready) {
                 mStatus = Status.PREPARED;
-                mReadyListener.Prepared();
+                mReadyListener.Prepared(mBmpInfoHandler.filePath);
             } else {
                 mWorkHandler.postDelayed(preparedDelay, 200);
             }
@@ -102,12 +102,12 @@ public class ImagePlayer {
                 Log.d(TAG,"decodeOk"+decodeOk+" ready"+ready);
                 if (decodeOk && ready) {
                     mStatus = Status.PREPARED;
-                    mReadyListener.Prepared();
+                    mReadyListener.Prepared(mBmpInfoHandler.filePath);
                 } else if (decodeOk) {
                     mWorkHandler.postDelayed(preparedDelay, 200);
                 } else {
                     if (mReadyListener != null ) {
-                        mReadyListener.playerr();
+                        mReadyListener.playerr(mBmpInfoHandler.filePath);
                     }
                     Log.d("TAG", "cannot display");
                 }
@@ -184,13 +184,13 @@ public class ImagePlayer {
                         Log.d(TAG, "((GifBmpInfo)mBmpInfoHandler).getDuration: " + duration);
                         mWorkHandler.postDelayed(ShowFrame, duration);
                         if (mReadyListener != null ) {
-                            mReadyListener.played();
+                            mReadyListener.played(mBmpInfoHandler.filePath);
                         }
                     }else if ((mBmpInfoHandler.mNativeBmpPtr != 0) && mBmpInfoHandler.renderFrame(mShowingFit)){
                         mStatus = Status.PLAYING;
                         mShowingFit = -1;
                         if (mReadyListener != null ) {
-                            mReadyListener.played();
+                            mReadyListener.played(mBmpInfoHandler.filePath);
                         }
                     }
                 } else {
@@ -539,9 +539,9 @@ public class ImagePlayer {
     public enum Status {PREPARED, PLAYING, STOPPED, IDLE}
 
     public interface PrepareReadyListener {
-        void Prepared();
-        void played();
-        void playerr();
+        void Prepared(String curUri);
+        void played(String curUri);
+        void playerr(String curUri);
     }
 
     public static boolean getProperties(String key, boolean def) {
