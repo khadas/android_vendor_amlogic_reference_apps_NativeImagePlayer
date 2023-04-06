@@ -3,6 +3,7 @@
 static jclass    gDecodeException_class;
 static jmethodID gDecodeException_constructorMethodID;
 static jfieldID bmphandler;
+static jfieldID frameDuration;
 static jclass bmpinfo_class;
 
 // These need to stay in sync with ImageDecoder.java's Error constants.
@@ -66,6 +67,7 @@ jlong nativeSetGif(JNIEnv *env, jobject obj1, jstring filepath){
         ALOGE("nativeSetGif %d",player->getFrameSize());
         jclass gif_class = FindClassOrDie(env,"com/droidlogic/imageplayer/decoder/GifBmpInfo");
         jfieldID gifFrame = GetFieldIDOrDie(env, gif_class,"mFrameCount","I");
+        frameDuration = GetFieldIDOrDie(env, gif_class,"mDuration","I");
         env->SetIntField(obj1, gifFrame,player->getFrameSize());
         jclass bmpinfo = FindClassOrDie(env,"com/droidlogic/imageplayer/decoder/BmpInfo");
         bmphandler = GetFieldIDOrDie(env,bmpinfo,"mNativeBmpPtr","J");
@@ -101,7 +103,7 @@ bool copy_to(sk_sp<VBitmap> dst, SkColorType dstColorType, const SkBitmap& src) 
     return true;
 }
 
-long GifCodec::decodeFrame(int frameIndex) {
+long GifCodec::decodeFrame(JNIEnv *env, jobject obj1,int frameIndex) {
     // FIXME: Create from an Image/ImageGenerator?
         if (frameIndex >= (int) fFrames.size()) {
             fFrames.resize(frameIndex + 1);
@@ -136,6 +138,12 @@ long GifCodec::decodeFrame(int frameIndex) {
                 }
 
             }
+
+            if (frameDuration != nullptr) {
+                int duration = fFrameInfos[frameIndex].fDuration;
+                env->SetIntField(obj1, frameDuration, duration);
+            }
+
             if (SkCodec::kSuccess != fCodec->getPixels(info, skbitmap.getPixels(),
                                                        skbitmap.rowBytes(), &opts)) {
                 ALOGE("Could not getPixels for frame %i", frameIndex);
@@ -155,7 +163,7 @@ jlong nativeDecodeFrame(JNIEnv *env, jobject obj1,jlong nativePtr,int frameIndex
         env->SetLongField(obj1,bmphandler,0);
     }
     GifCodec *decoder =  reinterpret_cast<GifCodec*>(nativePtr);
-    long handleID = decoder->decodeFrame(frameIndex);
+    long handleID = decoder->decodeFrame(env, obj1, frameIndex);
 
     return handleID;
 }

@@ -180,7 +180,9 @@ public class ImagePlayer {
                         Log.d(TAG,"((GifBmpInfo)mBmpInfoHandler).mFrameCount"+((GifBmpInfo)mBmpInfoHandler).mFrameCount);
                         mStatus = Status.PLAYING;
                         mBmpInfoHandler.decodeNext();
-                        mWorkHandler.postDelayed(ShowFrame, 16);
+                        int duration = ((GifBmpInfo)mBmpInfoHandler).getDuration();
+                        Log.d(TAG, "((GifBmpInfo)mBmpInfoHandler).getDuration: " + duration);
+                        mWorkHandler.postDelayed(ShowFrame, duration);
                         if (mReadyListener != null ) {
                             mReadyListener.played();
                         }

@@ -19,6 +19,7 @@ public class GifBmpInfo extends BmpInfo {
     int mCurrentDisplayFrame;
     int mFrameCount;
     int mCurrentId = 0;
+    int mDuration = 0;
 
     public boolean renderFrame(int fit) {
         boolean ret = false;
@@ -29,6 +30,10 @@ public class GifBmpInfo extends BmpInfo {
         }
         Log.d(TAG, "renderFrame ret" + ret);
         return ret;
+    }
+
+    public int getDuration() {
+        return mDuration;
     }
 
     @Override

@@ -34,6 +34,7 @@
 #include <SkBitmap.h>
 #include <SkCanvas.h>
 #include <SkData.h>
+#include <effects/SkColorMatrix.h>
 //#include <SkFilterQuality.h>
 #include <SkSurface.h>
 #include <utils/Log.h>
@@ -381,6 +382,9 @@ void ImageOperator::rgbToYuv420(uint8_t* rgbBuf, size_t width, size_t height, ui
     uint8_t R, G, B;
     size_t index = 0;
     isShown = true;
+
+    ColorTransform& colorTransform = (width <= 720) ? mTransform_bt601_limited : mTransform_bt709_limited;
+
     for (size_t j = 0; j < height; j++) {
         uint8_t* cr = crPlane;
         uint8_t* cb = cbPlane;
@@ -393,31 +397,21 @@ void ImageOperator::rgbToYuv420(uint8_t* rgbBuf, size_t width, size_t height, ui
                 R = gray;
                 G = gray;
                 B = gray;
-            }else {
+            } else {
                 R = rgbBuf[index++];
                 G = rgbBuf[index++];
                 B = rgbBuf[index++];
                 // Skip alpha
                 index++;
             }
-            if (width <= 720) {
-                *y++ =  ( 0.257 * R +0.504 * G + 0.098 * B)+16;
-                if (jEven && (i & 1) == 0) {
-                    *cb = ( -0.148 * R - 0.291 * G + 0.439 * B) + 128;
-                    *cr = (0.439 * R - 0.368 * G + -0.071 * B) + 128;
-                    cr += chromaStep;
-                    cb += chromaStep;
-                }
-            }else {
-                 *y++ =  ( 0.183 * R +0.614 * G + 0.062 * B)+16;
-                if (jEven && (i & 1) == 0) {
-                    *cb = ( -0.101 * R - 0.339 * G + 0.439 * B) + 128;
-                    *cr = (0.439 * R - 0.399 * G + -0.040 * B) + 128;
-                    cr += chromaStep;
-                    cb += chromaStep;
-                }
-            }
 
+            *y++ = colorTransform.y(R, G, B);
+            if (jEven && (i & 1) == 0) {
+                *cb = colorTransform.u(R, G, B);
+                *cr = colorTransform.v(R, G, B);
+                cr += chromaStep;
+                cb += chromaStep;
+            }
         }
         yPlane += yStride;
         if (jEven) {

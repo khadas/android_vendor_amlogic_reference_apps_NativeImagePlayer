@@ -45,6 +45,7 @@
 #include <hardware/gralloc1.h>
 #include <cutils/ashmem.h>
 #include "SharedMemoryProxy.h"
+#include "ColorTransform.h"
 
 using namespace android;
 #define IMG_INVALIDE  -1
@@ -106,4 +107,6 @@ class ImageOperator{
         ImageBitmap mbitmap;
         ScreenSize mscreen;
         JNIEnv *mEnv;
+        ColorTransform mTransform_bt601_limited{kRec601_Limited_SkYUVColorSpace};
+        ColorTransform mTransform_bt709_limited{kRec709_Limited_SkYUVColorSpace};
 };

@@ -22,6 +22,6 @@ public:
                    sk_sp<SkPngChunkReader> peeker = nullptr);
     int getFrameSize();
     ~GifCodec();
-    long decodeFrame(int frameIndex);
+    long decodeFrame(JNIEnv *env, jobject obj,int frameIndex);
 };
 
