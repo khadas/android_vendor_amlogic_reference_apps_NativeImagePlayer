@@ -23,6 +23,7 @@ import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Process;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.Surface;
@@ -40,6 +41,9 @@ public class ImagePlayer {
     private static final String AXIS = "/sys/class/video/device_resolution";
     private static final int ROTATION_DEGREE = 90;
     private static ImagePlayer mImagePlayerInstance;
+
+    public static final int FIT_DEFAULT = -1;
+    public static final int FIT_ORIGINAL = -2;
 
     static {
         System.loadLibrary("image_jni");
@@ -134,6 +138,11 @@ public class ImagePlayer {
             boolean ret = true;
             synchronized (lockObject) {
                 mBmpInfoHandler = BmpInfoFactory.getBmpInfo(mImageFilePath);
+                if (mBmpInfoHandler == null) {
+                    Log.e(TAG, "setDataSourceWork, mBmpInfoHandler is null");
+                    return;
+                }
+
                 mBmpInfoHandler.setImagePlayer(ImagePlayer.this);
                 ret = mBmpInfoHandler.setDataSource(mImageFilePath);
                 Log.d(TAG,"setDataSource"+mImageFilePath+"@"+mBmpInfoHandler+"----"+ret);
@@ -173,23 +182,41 @@ public class ImagePlayer {
                     if (mStatus != Status.PREPARED && mStatus != Status.PLAYING) {
                         return;
                     }
-                    Log.d("ShowFrame","mBmpInfo"+mBmpInfoHandler+"**"+mBmpInfoHandler.mNativeBmpPtr+"mStatus"+mStatus);
+
+                    if (mBmpInfoHandler == null) {
+                        Log.e(TAG, "ShowFrame, mBmpInfoHandler is null.");
+                        return;
+                    }
+
+                    boolean rendered = mBmpInfoHandler.mRendered;
+
+                    Log.d(TAG, "mBmpInfo" + mBmpInfoHandler + "**" + mBmpInfoHandler.mNativeBmpPtr
+                            + "mStatus" + mStatus + ", rendered: " + rendered);
                     if ((mBmpInfoHandler instanceof GifBmpInfo) &&
-                            ((GifBmpInfo)mBmpInfoHandler).mFrameCount >0 &&
-                            (mBmpInfoHandler.renderFrame(mShowingFit))) {
+                            ((GifBmpInfo)mBmpInfoHandler).mFrameCount >0) {
                         Log.d(TAG,"((GifBmpInfo)mBmpInfoHandler).mFrameCount"+((GifBmpInfo)mBmpInfoHandler).mFrameCount);
-                        mStatus = Status.PLAYING;
-                        mBmpInfoHandler.decodeNext();
-                        int duration = ((GifBmpInfo)mBmpInfoHandler).getDuration();
-                        Log.d(TAG, "((GifBmpInfo)mBmpInfoHandler).getDuration: " + duration);
-                        mWorkHandler.postDelayed(ShowFrame, duration);
-                        if (mReadyListener != null ) {
-                            mReadyListener.played(mBmpInfoHandler.filePath);
+                        long startMs = SystemClock.uptimeMillis();
+
+                        if (mBmpInfoHandler.renderFrame(mShowingFit)) {
+                            mStatus = Status.PLAYING;
+
+                            mBmpInfoHandler.decodeNext();
+                            int duration = ((GifBmpInfo)mBmpInfoHandler).getDuration();
+
+                            long decodeElapseTime = SystemClock.uptimeMillis() - startMs;
+                            long delayMs = duration - decodeElapseTime;
+                            if (delayMs < 0) delayMs = 0;
+
+                            Log.d(TAG, "((GifBmpInfo)mBmpInfoHandler).getDuration: " + duration + ", delayMs= " + delayMs);
+                            mWorkHandler.postDelayed(ShowFrame, delayMs);
+                            if (!rendered && mReadyListener != null ) {
+                                mReadyListener.played(mBmpInfoHandler.filePath);
+                            }
                         }
                     }else if ((mBmpInfoHandler.mNativeBmpPtr != 0) && mBmpInfoHandler.renderFrame(mShowingFit)){
                         mStatus = Status.PLAYING;
                         mShowingFit = -1;
-                        if (mReadyListener != null ) {
+                        if (!rendered && mReadyListener != null ) {
                             mReadyListener.played(mBmpInfoHandler.filePath);
                         }
                     }
@@ -298,12 +325,15 @@ public class ImagePlayer {
     }
 
     public boolean show() {
-        return show(-1);
+        return show(FIT_DEFAULT);
     }
 
 
     /**
-     * @param fit Using {@link Matrix.ScaleToFit#ordinal()}, -1 for default action
+     * @param fit Using {@link Matrix.ScaleToFit#ordinal()}.
+     *           {@link ImagePlayer#FIT_DEFAULT} for default action.
+     *            {@link ImagePlayer#FIT_ORIGINAL} will show as origin picture base on left-top.
+     *            Otherwise will be treat as FitCenter.
      * @return
      */
     public boolean show(int fit) {

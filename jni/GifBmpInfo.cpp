@@ -173,12 +173,14 @@ jlong nativeReleaseLastFrame(JNIEnv *env, jobject obj1,jlong nativePtr) {
     if (bmp != 0) {
         auto ptr= reinterpret_cast<VBitmap*>(bmp);
         env->SetLongField(obj1,bmphandler,0);
-        delete ptr;
+        SkSafeUnref(ptr);
     }
     if (nativePtr > 0) {
         GifCodec * decoder = reinterpret_cast<GifCodec*>(nativePtr);
-        delete decoder;
-        decoder = NULL;
+        if (decoder != nullptr) {
+            delete decoder;
+            decoder = nullptr;
+        }
     }
     return 0;
 }

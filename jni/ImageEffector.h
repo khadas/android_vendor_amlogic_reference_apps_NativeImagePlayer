@@ -32,6 +32,9 @@
 namespace android {
 class ImageEffector : public RefBase {
 public:
+    const static int FIT_DEFAULT = -1;
+    const static int FIT_ORIGINAL = -2;
+
     ImageEffector(int32_t width, int32_t height);
 
     virtual ~ImageEffector();
@@ -104,6 +107,9 @@ private:
     int32_t mScreenHeight;
     int32_t mFit;
     bool mIsLastTypeMovie{false};
+
+    std::unique_ptr<SkCanvas> mScreenCanvas;
+    SkPaint mAntiPaint;
 
     SkBitmap mScreenBitmap;
     SkRect mScreenRect;

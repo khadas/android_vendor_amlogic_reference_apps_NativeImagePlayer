@@ -179,17 +179,29 @@ bool ImageEffector::rotate(float rotation, bool keepScale, bool show) {
 }
 
 void ImageEffector::render() {
-    SkCanvas canvas(mScreenBitmap);
     SkRect imageRect{0, 0,
                      (float) mFrontImageInfo.width, (float) mFrontImageInfo.height};
     SkRect screenRect = mScreenRect;
 
     SkMatrix finalMatrix;
-    if (mFit != -1 || !screenRect.contains(imageRect)) {
-        finalMatrix.setRectToRect(imageRect, screenRect,iToFit(mFit));
+
+    SkMatrix::ScaleToFit requestFit = iToFit(mFit);
+    bool isDefaultFit = static_cast<int>(requestFit) == FIT_DEFAULT;
+    bool isOriginalFit = static_cast<int>(requestFit) == FIT_ORIGINAL;
+
+    if (isDefaultFit) {
+        // Default scale to fit center if image is bigger than display frame.
+        if (!screenRect.contains(imageRect)) {
+            finalMatrix.setRectToRect(imageRect, screenRect, SkMatrix::ScaleToFit::kCenter_ScaleToFit);
+        } else {
+            finalMatrix.postTranslate((screenRect.width() - imageRect.width()) / 2,
+                          (screenRect.height() - imageRect.height()) / 2);
+        }
+    } else if (isOriginalFit) {
+        // Show original image base on left-top
+        finalMatrix.postTranslate(0, 0);
     } else {
-        finalMatrix.postTranslate((screenRect.width() - imageRect.width()) / 2,
-                                  (screenRect.height() - imageRect.height()) / 2);
+        finalMatrix.setRectToRect(imageRect, screenRect, requestFit);
     }
 
     SkScalar rotation = mFrontImageInfo.rotation;
@@ -200,12 +212,31 @@ void ImageEffector::render() {
         SkRect mappedRect = finalMatrix.mapRect(imageRect);
         finalMatrix.postRotate(rotation, (float) mappedRect.centerX(),
                                (float) mappedRect.centerY());
-        mappedRect = finalMatrix.mapRect(imageRect);
 
-        if (mFit != -1 || (scaleX == 1 && !screenRect.contains(mappedRect))) {
-            SkMatrix m;
-            m.setRectToRect(mappedRect, screenRect, iToFit(mFit));
-            finalMatrix.postConcat(m);
+        if (!isOriginalFit) {
+            mappedRect = finalMatrix.mapRect(imageRect);
+
+            if (isDefaultFit) {
+                // Get original rect for image with out scale
+                SkMatrix originForImage;
+                SkScalar offsetX = (screenRect.width() - imageRect.width()) / 2.f;
+                SkScalar offsetY = (screenRect.height() - imageRect.height()) / 2.f;
+                originForImage.postTranslate(offsetX, offsetY);
+                originForImage.postRotate(rotation, screenRect.centerX(), screenRect.centerY());
+                SkRect originRotRect = originForImage.mapRect(imageRect);
+
+                SkMatrix m;
+                if (screenRect.contains(originRotRect)) {
+                    m.setRectToRect(mappedRect, originRotRect, SkMatrix::ScaleToFit::kFill_ScaleToFit);
+                } else {
+                    m.setRectToRect(mappedRect, screenRect, SkMatrix::ScaleToFit::kCenter_ScaleToFit);
+                }
+                finalMatrix.postConcat(m);
+            } else {
+                SkMatrix m;
+                m.setRectToRect(mappedRect, screenRect, requestFit);
+                finalMatrix.postConcat(m);
+            }
         }
     }
 
@@ -220,15 +251,12 @@ void ImageEffector::render() {
 
     SkRect currentRect = finalMatrix.mapRect(imageRect);
     if (!currentRect.isEmpty()) {
+        SkCanvas& canvas = *mScreenCanvas;
         clearDirtyRegion(canvas, currentRect);
 
         canvas.save();
         canvas.clipRect(currentRect);
         canvas.setMatrix(finalMatrix);
-
-        SkPaint paint;
-        paint.setAntiAlias(true);
-        paint.setDither(true);
 
         bool filter = finalMatrix.getScaleX() != SK_Scalar1 || finalMatrix.getScaleY() != SK_Scalar1;
         // Do not filter for movie(eg: git), or frame will jank.
@@ -238,7 +266,7 @@ void ImageEffector::render() {
 
         canvas.drawImage(mFrontImageInfo.image->asImage(), 0, 0,
                 SkSamplingOptions(filter ? SkFilterMode::kLinear : SkFilterMode::kNearest),
-                &paint);
+                &mAntiPaint);
 
         canvas.restore();
     }
@@ -265,8 +293,8 @@ void ImageEffector::clearDirtyRegion(SkCanvas &canvas, const SkRect &currentRect
             if (clearRegion.op(currentDirty, SkRegion::Op::kDifference_Op)) {
                 traverseRegion(clearRegion, [&](const SkIRect &rect) {
                     canvas.save();
-                    canvas.clipRect(SkRect::MakeLTRB(rect.left(), rect.top(), rect.right(),
-                                                     rect.bottom()));
+                    canvas.clipRect(SkRect::MakeLTRB(rect.left(), rect.top(),rect.right(),
+                                                     rect.bottom()).makeOutset(1, 1));
                     canvas.drawColor(SkColorSetARGB(255, 0, 0, 0));
                     canvas.restore();
                 });
@@ -289,6 +317,11 @@ void ImageEffector::init() {
     mScreenBitmap.allocPixels(k32Info);
     mScreenBitmap.eraseARGB(255, 0, 0, 0);
     mLastDirtyRegion.setRect(SkIRect::MakeWH(mScreenWidth, mScreenHeight));
+
+    mScreenCanvas = std::make_unique<SkCanvas>(mScreenBitmap);
+    mAntiPaint.setAntiAlias(true);
+    mAntiPaint.setDither(true);
+    mAntiPaint.setBlendMode(SkBlendMode::kSrc);
 }
 
 void ImageEffector::release() {
@@ -313,10 +346,11 @@ void ImageEffector::reset() {
 }
 
 SkMatrix::ScaleToFit ImageEffector::iToFit(int iFit) {
-    if (iFit < 0 || iFit > 3) {
-        return SkMatrix::ScaleToFit::kCenter_ScaleToFit;
+    if (iFit == FIT_DEFAULT || iFit == FIT_ORIGINAL || (iFit >= 0 && iFit <= 3)) {
+        return static_cast<SkMatrix::ScaleToFit>(iFit);
     }
-    return static_cast<SkMatrix::ScaleToFit>(iFit);
+
+    return SkMatrix::ScaleToFit::kCenter_ScaleToFit;
 }
 
 }

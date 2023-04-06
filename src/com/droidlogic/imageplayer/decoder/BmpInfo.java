@@ -24,6 +24,7 @@ public class BmpInfo {
     long mNativeBmpPtr;
     long mDecoderPtr;
     Status mCurrentStatus = Status.STOP;
+    boolean mRendered = false;
 
     public void setImagePlayer(ImagePlayer player) {
         mImagePlayer = player;
@@ -87,6 +88,7 @@ public class BmpInfo {
         boolean ret = false;
         if (mCurrentStatus == Status.DECODE) {
             ret = ( 0 == mImagePlayer.nativeShow(mNativeBmpPtr, fit, false));
+            mRendered = true;
             mCurrentStatus = Status.PLAYING;
         }
         return ret;
