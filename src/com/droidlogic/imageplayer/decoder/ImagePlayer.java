@@ -69,8 +69,8 @@ public class ImagePlayer {
     private boolean mredraw;
     private float mSx;
     private float mSy;
-    private final int mOsdWidth = getProperties("ro.surface_flinger.max_graphics_width", 1920);
-    private final int mOsdHeight = getProperties("ro.surface_flinger.max_graphics_height", 1080);
+    private final int mOsdWidth = getProperties("ro.surface_flinger.max_graphics_width", 3840);
+    private final int mOsdHeight = getProperties("ro.surface_flinger.max_graphics_height", 2160);
     private Runnable preparedDelay = new Runnable() {
         @Override
         public void run() {
@@ -254,6 +254,8 @@ public class ImagePlayer {
 
     public native static int nativeTransform(int ori, float sx, float sy, int left, int right, int top, int bottom, int step);
 
+    public native static int updateWindowSize(int width, int height);
+
     public void setPrepareListener(PrepareReadyListener listener) {
         this.mReadyListener = listener;
         Log.d(TAG, "setPrepared" + listener);
@@ -338,7 +340,7 @@ public class ImagePlayer {
      */
     public boolean show(int fit) {
         Log.d(TAG,"show"+mStatus+" "+mSurfaceView);
-        if (mStatus != Status.PREPARED) {
+        if (mStatus != Status.PREPARED && mStatus != Status.PLAYING) {
             return false;
         }
         mShowingFit = fit;
@@ -353,6 +355,63 @@ public class ImagePlayer {
         setPaintSize(1,1);
         return true;
     }
+
+    private Point viewSizeToAxisSize(int width, int height) {
+        int targetWidth;
+        int targetHeight;
+
+        int viewWidth = mOsdWidth;
+        int viewHeight = mOsdHeight;
+        int screenWidth = mScreenWidth;
+        int screenHeight = mScreenHeight;
+
+        int rot = getProperties("persist.sys.builtinrotation", 0);
+        if (rot == 1 || rot == 3) {
+            int tmp = viewWidth;
+            viewWidth = viewHeight;
+            viewHeight = tmp;
+
+            tmp = screenWidth;
+            screenWidth = screenHeight;
+            screenHeight = tmp;
+        }
+
+        Log.d(TAG, "viewSizeToAxisSize, width= " + width + ", height= " + height +
+                ", viewWidth= " + viewWidth + ", viewHeight= " + viewHeight +
+                ", mScreenWidth= " + screenWidth + ", mScreenHeight= " + screenHeight);
+
+        if (viewWidth == screenWidth && viewHeight == screenHeight) {
+            targetWidth = width;
+            targetHeight = height;
+        } else {
+            targetWidth = (int) ((float)width / viewWidth * screenWidth);
+            targetHeight = (int) ((float)height / viewHeight * screenHeight);
+        }
+
+        return new Point(targetWidth, targetHeight);
+    }
+
+    public boolean updateWindowDimension(int width, int height) {
+        Log.d(TAG, "updateWindowSize: " + width + " x " + height);
+        if (mSurfaceView == null || mSurfaceView.getSurfaceControl() == null) {
+            Log.w(TAG, "Invalid SurfaceView");
+            return false;
+        }
+
+        if (width <= 0 || height <= 0) {
+            Log.w(TAG, "No need update for invalid or not changed");
+            return false;
+        }
+
+        final Point point = viewSizeToAxisSize(width, height);
+        mWorkHandler.post(()->{
+            updateWindowSize(point.x, point.y);
+        });
+
+        return true;
+    }
+
+
     public void setDisplay(SurfaceView surfaceview) {
         Log.d(TAG,"setDisplay");
         mSurfaceView = surfaceview;

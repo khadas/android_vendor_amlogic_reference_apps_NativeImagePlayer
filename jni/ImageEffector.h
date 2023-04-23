@@ -27,6 +27,8 @@
 #include <SkMatrix.h>
 #include <utils/RefBase.h>
 
+#include <android-base/properties.h>
+
 #include <functional>
 
 namespace android {
@@ -47,6 +49,7 @@ public:
     bool scale(float sX, float sY, bool show = true);
     bool rotate(float rotation, bool keepScale = false, bool show = true);
     bool translate(float x, float y, bool show = true);
+    bool updateWindowSize(int width, int height);
     void reset();
     void render();
 
@@ -89,10 +92,60 @@ private:
         }
     };
 
+    class GlobalOrientation {
+    public:
+        static const int ROT_0 = 0;
+        static const int ROT_90 = 1;
+        static const int ROT_180 = 2;
+        static const int ROT_270 = 3;
+
+        int getOrientation() {
+            const std::string propStr = android::base::GetProperty(std::string(PROP_BUILTIN_ROTATION),
+                                                                   "0");
+            int rot = atoi(propStr.c_str());
+            if (rot < ROT_0) rot = ROT_0;
+            if (rot > ROT_270) rot = rot % 4;
+            return rot;
+        }
+
+        bool isPortrait() {
+            int rot = getOrientation();
+            return rot == ROT_90 || rot == ROT_270;
+        }
+
+        bool isLandscape() {
+            int rot = getOrientation();
+            return rot == ROT_0 || rot == ROT_180;
+        }
+
+        bool isOrientationChanged(bool update = false) {
+            int currentOrientation = getOrientation();
+            bool changed = currentOrientation != mLastOrientation;
+            if (changed && update) {
+                mLastOrientation = currentOrientation;
+            }
+
+            return changed;
+        }
+
+        std::string toString() {
+            std::string outStr;
+            outStr += isPortrait() ? "Portrait" : "Landscape";
+            outStr = outStr + "(" + std::to_string(getOrientation()) + ")";
+            return outStr;
+        }
+
+    private:
+        int mLastOrientation{0};
+        const char* PROP_BUILTIN_ROTATION = "persist.sys.builtinrotation";
+        // const char* PROP_HDMI_ROTATION = "persist.sys.hdmirotation";
+    };
+
     virtual void onFirstRef() override;
     virtual void onLastStrongRef(const void *id) override;
 
     void init();
+    void initScreenCanvas(int width, int height);
     void release();
     bool scaleUpdated(float sX, float sY);
     bool rotationUpdated(float rotation);
@@ -102,9 +155,9 @@ private:
     inline static SkMatrix::ScaleToFit iToFit(int iFit);
 
 private:
+    GlobalOrientation mGlobalOrientation;
+
     FrontImageInfo mFrontImageInfo;
-    int32_t mScreenWidth;
-    int32_t mScreenHeight;
     int32_t mFit;
     bool mIsLastTypeMovie{false};
 
@@ -112,6 +165,7 @@ private:
     SkPaint mAntiPaint;
 
     SkBitmap mScreenBitmap;
+    SkBitmap mSubBitmap;
     SkRect mScreenRect;
     SkRegion mLastDirtyRegion;
 };

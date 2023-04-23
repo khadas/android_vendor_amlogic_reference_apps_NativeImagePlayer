@@ -1094,6 +1094,12 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
     private class SurfaceCallback implements SurfaceHolder.Callback {
         @Override
         public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+            Log.i(TAG, "surfaceChanged, format= " + format + ", width= " + width + ", height = " + height);
+
+            if (mImagePlayer != null) {
+                mImagePlayer.updateWindowDimension(width, height);
+                mImagePlayer.show(Matrix.ScaleToFit.CENTER.ordinal());
+            }
         }
 
         @Override

@@ -24,16 +24,14 @@
 #define FUNC_E() ALOGD("%s EEE", __FUNCTION__ )
 #define FUNC_X() ALOGD("%s XXX", __FUNCTION__ )
 
-namespace android {
+#define GRALLOC_ALIGN(value, base) ((((value) + (base) -1) / (base)) * (base))
 
+namespace android {
 ImageEffector::ImageEffector(int32_t width, int32_t height) {
     FUNC_E();
-    mScreenWidth = width;
-    mScreenHeight = height;
-
-    ALOGD("Surface size: [%d, %d]", mScreenWidth, mScreenHeight);
-
     mScreenRect.setWH(width, height);
+    ALOGD("Surface size: [%f, %f]", mScreenRect.width(), mScreenRect.height());
+
 }
 
 ImageEffector::~ImageEffector() {
@@ -81,6 +79,12 @@ bool ImageEffector::setImage(SkBitmap *bitmap, int fit, bool show, bool movie) {
     mFrontImageInfo.height = bitmap->height();
 
     ALOGD("setImage, show: %d, fit= %d", show, fit);
+
+    if (mGlobalOrientation.isOrientationChanged(true)) {
+        ALOGI("setImage, currentOrientation: %s,, isOrientationChanged: %d",
+                mGlobalOrientation.toString().c_str(), mGlobalOrientation.isOrientationChanged());
+        initScreenCanvas(mScreenRect.width(), mScreenRect.height());
+    }
 
     if (show) {
         render();
@@ -178,6 +182,22 @@ bool ImageEffector::rotate(float rotation, bool keepScale, bool show) {
     return true;
 }
 
+bool ImageEffector::updateWindowSize(int width, int height) {
+    if (SkRect::MakeWH(width, height) == mScreenRect) {
+        // No need update
+        return false;
+    }
+
+    width = GRALLOC_ALIGN(width, 32);
+    int w = mScreenRect.width();
+    int h = mScreenRect.height();
+    ALOGD("updateWindowSize, width= %d, height= %d, mScreenWidth= %d, mScreenHeight= %d",
+          width, height, w, h);
+
+    initScreenCanvas(width, height);
+    return true;
+}
+
 void ImageEffector::render() {
     SkRect imageRect{0, 0,
                      (float) mFrontImageInfo.width, (float) mFrontImageInfo.height};
@@ -247,12 +267,23 @@ void ImageEffector::render() {
 
     finalMatrix.postTranslate(mFrontImageInfo.translateX, mFrontImageInfo.translateY);
 
-    //canvas.drawColor(SkColorSetARGB(255, 0, 0, 0));
+    //canvas.drawColor(SkColorSetARGB(255, 100, 100, 100));
 
     SkRect currentRect = finalMatrix.mapRect(imageRect);
-    if (!currentRect.isEmpty()) {
+    if (!currentRect.isEmpty() && mFrontImageInfo.isValid()
+        && mFrontImageInfo.image->readyToDraw()) {
+
         SkCanvas& canvas = *mScreenCanvas;
-        clearDirtyRegion(canvas, currentRect);
+
+//        if (((int)rotation % 90) == 0) {
+//            clearDirtyRegion(canvas, currentRect);
+//        } else {
+//            // Clear all if not integer multiples of 90,
+//            // Can not calculate the dirty region
+//            canvas.drawColor(SkColorSetARGB(255, 0, 0, 0));
+//        }
+
+        canvas.drawColor(SkColorSetARGB(255, 0, 0, 0));
 
         canvas.save();
         canvas.clipRect(currentRect);
@@ -287,7 +318,7 @@ void ImageEffector::clearDirtyRegion(SkCanvas &canvas, const SkRect &currentRect
                                             round(currentRect.right()),
                                             round(currentRect.bottom()))};
     if (!mLastDirtyRegion.isEmpty()) {
-        SkRegion clearRegion{SkIRect::MakeWH(mScreenWidth, mScreenHeight)};
+        SkRegion clearRegion{SkIRect::MakeWH(mScreenRect.width(), mScreenRect.height())};
         if (clearRegion.op(mLastDirtyRegion, SkRegion::Op::kIntersect_Op)) {
 
             if (clearRegion.op(currentDirty, SkRegion::Op::kDifference_Op)) {
@@ -300,28 +331,51 @@ void ImageEffector::clearDirtyRegion(SkCanvas &canvas, const SkRect &currentRect
                 });
             }
         }
+    } else {
+        ALOGI("Empty dirty, no need clear");
     }
 
     mLastDirtyRegion.set(currentDirty);
 }
 
 void ImageEffector::init() {
-    if (!mScreenBitmap.isNull()) {
-        mScreenBitmap.reset();
+    ALOGD("init, mGlobalOrientation changed: %s", mGlobalOrientation.toString().c_str());
+    bool isLand = mGlobalOrientation.isLandscape();
+    int width = mScreenRect.width();
+    int height = mScreenRect.height();
+    if ((!isLand && (width > height)) || (isLand && (width < height))) {
+        std::swap(width, height);
     }
 
-    SkImageInfo k32Info = SkImageInfo::Make(mScreenWidth, mScreenHeight,
+    initScreenCanvas(width, height);
+
+    mAntiPaint.setAntiAlias(true);
+    mAntiPaint.setDither(true);
+    mAntiPaint.setBlendMode(SkBlendMode::kSrc);
+
+    // Init orientation
+    mGlobalOrientation.isOrientationChanged(true);
+}
+
+void ImageEffector::initScreenCanvas(int width, int height) {
+    if (!mScreenBitmap.isNull()) {
+        mScreenBitmap.reset();
+        mScreenBitmap.setPixelRef(nullptr, 0, 0);
+        mScreenBitmap.setPixels(nullptr);
+    }
+
+    mScreenRect.setWH(width, height);
+
+    ALOGD("initScreenCanvas, mScreenWidth= %f, mScreenHeight= %f", mScreenRect.width(), mScreenRect.height());
+    SkImageInfo k32Info = SkImageInfo::Make(width, height,
                                             SkColorType::kRGBA_8888_SkColorType,
                                             SkAlphaType::kPremul_SkAlphaType,
                                             SkColorSpace::MakeSRGB());
     mScreenBitmap.allocPixels(k32Info);
     mScreenBitmap.eraseARGB(255, 0, 0, 0);
-    mLastDirtyRegion.setRect(SkIRect::MakeWH(mScreenWidth, mScreenHeight));
+    mLastDirtyRegion.setRect(SkIRect::MakeWH(width, height));
 
     mScreenCanvas = std::make_unique<SkCanvas>(mScreenBitmap);
-    mAntiPaint.setAntiAlias(true);
-    mAntiPaint.setDither(true);
-    mAntiPaint.setBlendMode(SkBlendMode::kSrc);
 }
 
 void ImageEffector::release() {
@@ -331,6 +385,10 @@ void ImageEffector::release() {
 
     if (!mScreenBitmap.isNull()) {
         mScreenBitmap.reset();
+    }
+
+    if (!mSubBitmap.isNull()) {
+        mSubBitmap.reset();
     }
 }
 

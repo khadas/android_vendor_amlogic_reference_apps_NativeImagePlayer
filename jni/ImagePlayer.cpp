@@ -247,6 +247,12 @@ static int rotate(JNIEnv *env, jclass clz,jint rotation, jboolean redraw) {
         bmp.reset();
     }*/
 }
+
+static int nativeUpdateWindowSize(JNIEnv *env, jclass clz, jint width, jint height) {
+    ALOGD("ImageEffector, %s", __FUNCTION__ );
+    return mEffector->updateWindowSize(width, height) ? 0 : -1;
+}
+
 static int reRender(int32_t width, int32_t height, void *data, size_t inLen, SkColorType colorType) {
     status_t err = NO_ERROR;
     int bmpWidth = ((width + 1) & ~1);
@@ -661,6 +667,7 @@ static int transform(JNIEnv *env, jclass clz, jint rotation, jfloat sx, jfloat s
     bmp.reset();
     return ret;
 }
+
 static const JNINativeMethod gImagePlayerMethod[] = {
     {"initParam",           "()I",     (void*)initParam},
     {"bindSurface",           "(Landroid/view/Surface;II)V",          (void*)bindSurface },
@@ -670,6 +677,7 @@ static const JNINativeMethod gImagePlayerMethod[] = {
     {"nativeRotate",              "(IZ)I",                               (void*)rotate},
     {"nativeRotateScaleCrop",           "(IFFZ)I",                      (void*)rotateScaleCrop},
     {"nativeTransform",          "(IFFIIIII)I",                               (void*)transform},
+    {"updateWindowSize",          "(II)I",                               (void*)nativeUpdateWindowSize},
     {"nativeTranslate",          "(FFZ)I",                               (void*)nativeTranslate},
     {"nativeReset",                "()V",     (void*)nativeReset},
     {"nativeRelease",                "()V",     (void*)nativeRelease},
