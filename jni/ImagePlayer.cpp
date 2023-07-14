@@ -24,6 +24,7 @@ using namespace android;
 #define GRALLOC1_VIDEO 1ULL << 17
 #define PROPERTY "vendor.display-size"
 #define PROP_DUMP_IMAGE_PATH "debug.image_player.dump_path"
+#define PROP_CONF_GPU_RENDER "debug.vendor.image_gpu_render"
 #define ODS_WIDTH_PROPERTY "ro.surface_flinger.max_graphics_width"
 #define ODS_HEIGHT_PROPERTY "ro.surface_flinger.max_graphics_height"
 sp<ANativeWindow> mNativeWindow = nullptr;
@@ -101,6 +102,7 @@ static int StringSplit(std::vector<std::string>& dst, const std::string& src, co
 }
 static int reRender(int32_t width, int32_t height, void *data, size_t inLen,  SkColorType colorType);
 static int render(int32_t width, int32_t height, void *data, size_t inLen,  SkColorType colorType);
+static int renderYuv420(UniqueAsyncResult result, int width, int height);
 
 static int initVideoParam(JNIEnv *env, jobject entity) {
     ALOGE("initVideoParam");
@@ -151,6 +153,7 @@ static int initParam(JNIEnv *env, jobject entity) {
     ALOGE("after initial param");
     return ret;
 }
+
 void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface, jint surfaceWidth, jint surfaceHeight){
     sp<IGraphicBufferProducer> new_st = NULL;
     jnienv = env;
@@ -177,7 +180,13 @@ void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface, jint surfaceWi
     if (new_st != NULL) {
         mNativeWindow = new Surface(new_st,/*controlledByApp*/false);
         if (mEffector) mEffector.clear();
-        mEffector = new ImageEffector(surfaceWidth, surfaceHeight);
+
+        bool gpuRender = android::base::GetBoolProperty(std::string(PROP_CONF_GPU_RENDER), true);
+        mEffector = new ImageEffector(surfaceWidth, surfaceHeight, gpuRender,
+                                      [](UniqueAsyncResult result, int width, int height) {
+                                          renderYuv420(std::move(result), width, height);
+                                      });
+
         ALOGI("before connect");
         native_window_api_connect(mNativeWindow.get(),NATIVE_WINDOW_API_MEDIA);
         ALOGI("set native window overlay %0x",GRALLOC1_PRODUCER_USAGE_CAMERA);
@@ -220,7 +229,7 @@ void unbindSurface(){
 static int rotate(JNIEnv *env, jclass clz,jint rotation, jboolean redraw) {
     ALOGD("ImageEffector, %s", __FUNCTION__ );
     int ret = 0;
-    if (mEffector->rotate(rotation, true, redraw)) {
+    if (mEffector->rotate(rotation, true, redraw) && !mEffector->isAsyncRender()) {
         auto bitmap = mEffector->bitmap();
         uint8_t* pixelBuffer = (uint8_t*)bitmap.getPixels();
         ret = render(bitmap.width(),bitmap.height(),pixelBuffer,
@@ -317,6 +326,7 @@ static int reRender(int32_t width, int32_t height, void *data, size_t inLen, SkC
 
     return 0;
 }
+
 static int render(int32_t width, int32_t height, void *data, size_t inLen, SkColorType colorType ) {
     GraphicBufferMapper &mapper = GraphicBufferMapper::get();
     status_t err = NO_ERROR;
@@ -385,6 +395,73 @@ static int render(int32_t width, int32_t height, void *data, size_t inLen, SkCol
     return NO_ERROR;
 }
 
+static int renderYuv420(UniqueAsyncResult result, int width, int height) {
+    if (!isShown || result->count() != 3) return -1;
+
+    ALOGD("renderYuv420, width= %d, height= %d", width, height);
+    status_t err = NO_ERROR;
+    ANativeWindowBuffer *buf;
+    native_window_set_buffers_dimensions(mNativeWindow.get(), width, height);
+    //status_t res =  mNativeWindow->dequeueBuffer(mNativeWindow.get(),&buf,&fenceFd);
+    err = native_window_dequeue_buffer_and_wait(mNativeWindow.get(), &buf);
+    if (err != NO_ERROR) {
+        ALOGE("%s: Dequeue buffer failed: %s (%d)", __FUNCTION__, strerror(-err), err);
+        return err;
+    }
+    setUvmUsage(buf, 1);
+
+    Rect bounds(width, height);
+    uint8_t *img = nullptr;
+    uint64_t usage = am_gralloc_get_omx_osd_producer_usage() |
+                     GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN;
+    GraphicBufferMapper &mapper = GraphicBufferMapper::get();
+    err = mapper.lock(buf->handle, usage, bounds, (void **) (&img));
+    if (err != NO_ERROR) {
+        ALOGE("%s: Error trying to lock output buffer fence: %s (%d)", __FUNCTION__,
+              strerror(-err), err);
+        return err;
+    }
+    if (img == nullptr) return NO_MEMORY;
+
+    ALOGD("renderYuv420, fill buffer +");
+    //Fill buffer(yuv420p)
+    uint8_t *dataPtr = img;
+    int yLen = height * (int) result->rowBytes(0);
+    memcpy(dataPtr, result->data(0), yLen);
+    dataPtr += yLen;
+
+    uint8_t* u = (uint8_t *)result->data(1);
+    uint8_t* v = (uint8_t *)result->data(2);
+
+    int uvLen = height * (int) result->rowBytes(1);
+    for (int i = 0; i < uvLen; i += 2) {
+        dataPtr[0] = v[0];
+        dataPtr[1] = u[0];
+
+        u++;
+        v++;
+        dataPtr += 2;
+    }
+
+
+//    memcpy(dataPtr, result->data(1), uvLen);
+//    dataPtr += uvLen;
+//    memcpy(dataPtr, result->data(2), uvLen);
+    ALOGD("renderYuv420, fill buffer -");
+
+    const std::string dumpPath = android::base::GetProperty(std::string(PROP_DUMP_IMAGE_PATH), "");
+    bool dump = !dumpPath.empty() && (access(dumpPath.c_str(), F_OK) == 0);
+    ALOGI("Debug path: %s, dump: %d", dumpPath.c_str(), dump);
+    if (dump) {
+        imageplayer->saveBmp((const char*)img,dumpPath.c_str(), buf->height* buf->stride*3/2);
+    }
+
+    mapper.unlock(buf->handle);
+    mNativeWindow->queueBuffer(mNativeWindow.get(), buf, -1);
+    img = nullptr;
+    return NO_ERROR;
+}
+
 static int renderEmpty(int32_t width, int32_t height) {
     GraphicBufferMapper &mapper = GraphicBufferMapper::get();
     status_t err = NO_ERROR;
@@ -433,22 +510,27 @@ static jint nativeShow(JNIEnv *env, jclass clz, jlong jbitmap, int fit, jboolean
     VBitmap* bitmap = reinterpret_cast<VBitmap*>(jbitmap);
 
     bitmap->getSkBitmap(&skbitmap);
-    ALOGE("skColorType %d %d %d",bitmap->colorType(),bitmap->width(),bitmap->height());
+    ALOGE("nativeShow skColorType %d %d %d",bitmap->colorType(),bitmap->width(),bitmap->height());
 
-    if (mEffector->setImage(&skbitmap, fit, true, movie)) {
+    if (mEffector->setImage(&skbitmap, fit, true, movie)
+        && !mEffector->isAsyncRender()) {
         auto bmp = mEffector->bitmap();
-        uint8_t* pixelBuffer = (uint8_t*)mEffector->bitmap().getPixels();
+        uint8_t *pixelBuffer = (uint8_t *) mEffector->bitmap().getPixels();
         mLastWidth = 0;
         mLastHeight = 0;
-        return render(bmp.width(),bmp.height(),pixelBuffer,bmp.width() * bmp.height(),bmp.colorType());
+        ALOGE("nativeShow Back process");
+        return render(bmp.width(), bmp.height(), pixelBuffer, bmp.width() * bmp.height(),
+                      bmp.colorType());
     }
+
+    ALOGE("nativeShow END");
 
     return 0;
 }
 static jint rotateScaleCrop(JNIEnv* env, jclass clz,jint rotation, jfloat sx,jfloat sy, jboolean redraw) {
     ALOGD("ImageEffector, %s", __FUNCTION__ );
     int ret = 0;
-    if (mEffector->rotate(rotation, true, redraw)) {
+    if (mEffector->rotate(rotation, true, redraw) && !mEffector->isAsyncRender()) {
         auto bitmap = mEffector->bitmap();
         uint8_t* pixelBuffer = (uint8_t*)bitmap.getPixels();
         ret = render(bitmap.width(),bitmap.height(),pixelBuffer,bitmap.width()*bitmap.height(),bitmap.colorType());
@@ -528,6 +610,9 @@ void nativeReset(JNIEnv *env,jclass clz) {
 void nativeRestore(JNIEnv *env,jclass clz) {
     if (mEffector) {
         mEffector->reset();
+        if (mEffector->isAsyncRender()) {
+            return;
+        }
         auto bmp = mEffector->bitmap();
         render(bmp.width(),bmp.height(),(uint8_t*)bmp.getPixels(),bmp.width()*bmp.height(),bmp.colorType());
     }
@@ -585,7 +670,7 @@ static jint nativeScale(JNIEnv *env, jclass clz,jfloat sx,jfloat sy,jboolean red
     ALOGD("ImageEffector, %s", __FUNCTION__ );
 
     int ret = 0;
-    if (mEffector->scale(sx, sy, redraw)) {
+    if (mEffector->scale(sx, sy, redraw) && !mEffector->isAsyncRender()) {
         auto bmp = mEffector->bitmap();
         ret =  render(bmp.width(),bmp.height(),(uint8_t*)bmp.getPixels(),bmp.width()*bmp.height(),bmp.colorType());
     }
@@ -594,7 +679,7 @@ static jint nativeScale(JNIEnv *env, jclass clz,jfloat sx,jfloat sy,jboolean red
 
 static int nativeTranslate (JNIEnv *env, jclass clz, jfloat x, jfloat y, jboolean redraw) {
     int ret = 0;
-    if (mEffector->translate(x, y, redraw)) {
+    if (mEffector->translate(x, y, redraw) && !mEffector->isAsyncRender()) {
         auto bmp = mEffector->bitmap();
         ret =  render(bmp.width(),bmp.height(),(uint8_t*)bmp.getPixels(),bmp.width()*bmp.height(),bmp.colorType());
     }

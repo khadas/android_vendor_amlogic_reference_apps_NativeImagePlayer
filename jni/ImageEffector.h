@@ -32,12 +32,19 @@
 #include <functional>
 
 namespace android {
+class SkiaGpuDevice;
+class AsyncContext;
+
+using UniqueAsyncResult = std::unique_ptr<const SkImage::AsyncReadResult>;
+using OnRenderFinished = std::function<void(UniqueAsyncResult, int, int)>;
+
 class ImageEffector : public RefBase {
 public:
     const static int FIT_DEFAULT = -1;
     const static int FIT_ORIGINAL = -2;
 
-    ImageEffector(int32_t width, int32_t height);
+    ImageEffector(int32_t width, int32_t height, bool gpuRender = false,
+            OnRenderFinished callback = nullptr);
 
     virtual ~ImageEffector();
 
@@ -52,7 +59,7 @@ public:
     bool updateWindowSize(int width, int height);
     void reset();
     void render();
-
+    bool isAsyncRender() { return mGpuRender && mRenderFinishedCallback != nullptr; }
 private:
     class FrontImageInfo {
     public:
@@ -150,8 +157,9 @@ private:
     bool scaleUpdated(float sX, float sY);
     bool rotationUpdated(float rotation);
     bool translateUpdated(float x, float y);
-    void clearDirtyRegion(SkCanvas &canvas, const SkRect &currentRect);
+    void clearDirtyRegion(SkCanvas *canvas, const SkRect &currentRect);
     void traverseRegion(const SkRegion &region, std::function<void(const SkIRect &rect)> f);
+    void readBackPixels(bool requestSync = false);
     inline static SkMatrix::ScaleToFit iToFit(int iFit);
 
 private:
@@ -160,14 +168,22 @@ private:
     FrontImageInfo mFrontImageInfo;
     int32_t mFit;
     bool mIsLastTypeMovie{false};
+    bool mGpuRender{false};
 
-    std::unique_ptr<SkCanvas> mScreenCanvas;
+    sp<SkiaGpuDevice> mGpuDevice;
     SkPaint mAntiPaint;
 
     SkBitmap mScreenBitmap;
-    SkBitmap mSubBitmap;
     SkRect mScreenRect;
     SkRegion mLastDirtyRegion;
+
+    OnRenderFinished mRenderFinishedCallback{nullptr};
+};
+
+class AsyncContext {
+public:
+    std::unique_ptr<const SkImage::AsyncReadResult> fResult;
+    bool fCalled;
 };
 }
 

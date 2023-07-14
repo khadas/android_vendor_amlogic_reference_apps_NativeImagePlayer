@@ -73,6 +73,9 @@ cc_library_shared {
         "libhardware_legacy",
         "libstagefright_foundation",
         "libamgralloc_ext",
+        "libEGL",
+        "libGLESv1_CM",
+        "libGLESv2",
     ],
     include_dirs: [
         "frameworks/native/libs/nativewindow/include",

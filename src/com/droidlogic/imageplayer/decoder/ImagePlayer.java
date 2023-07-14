@@ -199,8 +199,11 @@ public class ImagePlayer {
 
                         if (mBmpInfoHandler.renderFrame(mShowingFit)) {
                             mStatus = Status.PLAYING;
+                            Log.d(TAG, "GifRender cost: " + (SystemClock.uptimeMillis() - startMs) + "ms");
 
+                            long decodeStartMs = SystemClock.uptimeMillis();
                             mBmpInfoHandler.decodeNext();
+                            Log.d(TAG, "GifDecode cost: " + (SystemClock.uptimeMillis() - decodeStartMs) + "ms");
                             int duration = ((GifBmpInfo)mBmpInfoHandler).getDuration();
 
                             long decodeElapseTime = SystemClock.uptimeMillis() - startMs;
@@ -274,7 +277,7 @@ public class ImagePlayer {
         return true;
     }
 
-    public void bindSurface(SurfaceHolder holder) {
+    public void bindSurface(final SurfaceHolder holder) {
         int surfaceWidth = 0;
         int surfaceHeight = 0;
         if (mScreenWidth > 0 && mScreenHeight > 0) {
@@ -286,9 +289,17 @@ public class ImagePlayer {
             Log.w(TAG, "bindSurface, Can not recognized screen size, using view size");
         }
 
-        Log.i(TAG, "bindSurface, Screen size: [" + surfaceWidth + " x " + surfaceHeight + "]");
-        bindSurface(holder.getSurface(), surfaceWidth, surfaceHeight);
-        bindSurface = true;
+        final int fSurfaceWidth = surfaceWidth;
+        final int fSurfaceHeight = surfaceHeight;
+        mWorkHandler.post(new Runnable() {
+            @Override
+            public void run() {
+                Log.i(TAG, "bindSurface, Screen size: [" + fSurfaceWidth + " x " + fSurfaceHeight + "]");
+                bindSurface(holder.getSurface(), fSurfaceWidth, fSurfaceHeight);
+                bindSurface = true;
+            }
+        });
+
     }
     private Point getInitialFrameSize() {
         int srcW = getBmpWidth();
@@ -453,7 +464,7 @@ public class ImagePlayer {
     public int setScale(float sx, float sy) {
        boolean redraw = true;
         synchronized(lockObject) {
-            nativeScale(sx, sy, redraw);
+            mWorkHandler.post(()->nativeScale(sx, sy, redraw));
         }
         //setPaintSize(sx,sy);
         return 0;
@@ -462,7 +473,7 @@ public class ImagePlayer {
     public int setTranslate(int xpos,int ypos, float scale) {
         boolean redraw = true;
         synchronized(lockObject) {
-            nativeTranslate(xpos, ypos, redraw);
+            mWorkHandler.post(()->nativeTranslate(xpos, ypos, redraw));
         }
 //        mWorkHandler.removeCallbacks(ShowFrame);
 //        int frameWidth = (int)(mSurfaceWidth*scale);
@@ -509,7 +520,7 @@ public class ImagePlayer {
     }
 
     public void restore() {
-        nativeRestore();
+        mWorkHandler.post(()->nativeRestore());
     }
 
     private Runnable rotateCropWork = new Runnable() {
@@ -586,7 +597,7 @@ public class ImagePlayer {
             mWorkHandler.removeCallbacks(decodeRunnable);
             Log.d(TAG,"stop");
             mWorkHandler.removeCallbacks(ShowFrame);
-            unbindSurface();
+            mWorkHandler.post(this::unbindSurface);
             mStatus = Status.STOPPED;
         }
     }
