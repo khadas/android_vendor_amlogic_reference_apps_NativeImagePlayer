@@ -24,6 +24,9 @@
 #include <SkPixelRef.h>
 #include <cutils/compiler.h>
 #include <hwui/Bitmap.h>
+#include <SkEncodedImageFormat.h>
+#include <SkImageEncoder.h>
+
 class SkWStream;
 
 namespace android {

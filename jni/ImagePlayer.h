@@ -31,6 +31,7 @@
 #include "Bitmap.h"
 #include <SkAndroidCodec.h>
 #include <SkBitmap.h>
+#include <SkStream.h>
 #include <SkCanvas.h>
 #include <SkData.h>
 #include <SkSurface.h>

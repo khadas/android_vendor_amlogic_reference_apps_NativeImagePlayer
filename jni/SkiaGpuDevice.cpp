@@ -129,7 +129,7 @@ bool SkiaGpuDevice::init() {
 }
 
 bool SkiaGpuDevice::initSkiaGL() {
-    sk_sp<const GrGLInterface> glInterface(GrGLCreateNativeInterface());
+    sk_sp<const GrGLInterface> glInterface(GrGLMakeNativeInterface());
     if (glInterface == nullptr) {
         ALOGE("Can not create SKia GL Interface");
         return false;
@@ -150,7 +150,7 @@ bool SkiaGpuDevice::initWithTarget(SkBitmap &targetBitmap) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(targetBitmap.info().width(),
                                             targetBitmap.info().height(),
                                             sk_sp<SkColorSpace>(targetBitmap.info().colorSpace()));
-    mSurface = SkSurface::MakeRenderTarget(mGrContext.get(), SkBudgeted::kYes,
+    mSurface = SkSurface::MakeRenderTarget(mGrContext.get(), skgpu::Budgeted::kYes,
                                            info,0, kTopLeft_GrSurfaceOrigin,nullptr);
     if (!mSurface) {
         ALOGE("Can not MakeRenderTarget");

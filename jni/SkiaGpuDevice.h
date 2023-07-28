@@ -21,6 +21,9 @@
 #include <utils/RefBase.h>
 #include <SkCanvas.h>
 #include <SkSurface.h>
+#include <SkBitmap.h>
+#include <SkColorSpace.h>
+
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>

@@ -25,6 +25,7 @@
 #include <SkRegion.h>
 #include <SkCanvas.h>
 #include <SkMatrix.h>
+#include <SkColorSpace.h>
 #include <utils/RefBase.h>
 
 #include <android-base/properties.h>
