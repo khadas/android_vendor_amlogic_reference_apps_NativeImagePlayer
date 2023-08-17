@@ -17,6 +17,9 @@
 
 package com.droidlogic.imageplayer.decoder;
 
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Point;
 import android.graphics.Rect;
 import android.os.Handler;
@@ -30,11 +33,15 @@ import android.view.Surface;
 import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewParent;
 import android.widget.FrameLayout;
 import android.util.Log;
 import com.droidlogic.app.SystemControlManager;
 
 import java.lang.reflect.Method;
+
 public class ImagePlayer {
     public static final String TAG = "ImagePlayer";
     public static int STEP = 100;
@@ -44,6 +51,32 @@ public class ImagePlayer {
 
     public static final int FIT_DEFAULT = -1;
     public static final int FIT_ORIGINAL = -2;
+
+    //0: osd, 1: auto, 2: video
+    private static final String PROP_VIEW_MODE = "debug.imageplayer.view_mode";
+    private static final String PROP_OSD_MARK = "debug.imageplayer.osd_mark";
+    private final int mOsdMaxImagePixels;
+
+    private int mShowingFit = -1;
+    private int mViewMode;
+    private boolean mOsdMark;
+    private boolean mIsShowToOsd = true;
+
+    /**
+     * Always playing image to OSD
+     */
+    public static final int VIEW_MODE_FAST_OSD = 0;
+    /**
+     * Select the appropriate display target, default mode
+     */
+    public static final int VIEW_MODE_AUTO_HD = 1;
+    /**
+     * Always playing image to Video Composer
+     */
+    public static final int VIEW_MODE_VC_UHD = 2;
+
+    private EmbeddedView mEmbeddedView;
+    private OsdImageView mOsdImageView;
 
     static {
         System.loadLibrary("image_jni");
@@ -59,6 +92,7 @@ public class ImagePlayer {
     private PrepareReadyListener mReadyListener;
     private HandlerThread mWorkThread = new HandlerThread("worker",Process.THREAD_PRIORITY_VIDEO);
     private Handler mWorkHandler;
+    private Handler mUiHandler = new Handler(Looper.getMainLooper());
     private SurfaceControl.Transaction mTransaction;
     private Status mStatus = Status.IDLE;
     private String mImageFilePath;
@@ -77,7 +111,9 @@ public class ImagePlayer {
             boolean ready = (mReadyListener != null);
             if (ready) {
                 mStatus = Status.PREPARED;
-                mReadyListener.Prepared(mBmpInfoHandler.filePath);
+
+                mReadyListener.Prepared((mBmpInfoHandler != null) ?
+                        mBmpInfoHandler.filePath : null);
             } else {
                 mWorkHandler.postDelayed(preparedDelay, 200);
             }
@@ -86,7 +122,7 @@ public class ImagePlayer {
     private Runnable reshow = new Runnable() {
          @Override
         public void run() {
-             if (mSurfaceView == null || mSurfaceView.getSurfaceControl() == null) {
+             if (mSurfaceView == null) {
                  mWorkHandler.postDelayed(reshow, 200);
              } else {
                  show(mShowingFit);
@@ -118,9 +154,12 @@ public class ImagePlayer {
             }
         }
     };
-    private int mShowingFit = -1;
 
     public boolean CurrentBmpAvailable() {
+        if (mIsShowToOsd && mOsdImageView != null) {
+            return true;
+        }
+
         if (mBmpInfoHandler != null ) {
             if ((mBmpInfoHandler instanceof GifBmpInfo) &&
                     ((GifBmpInfo)mBmpInfoHandler).mFrameCount >0 ) {
@@ -219,6 +258,7 @@ public class ImagePlayer {
                     }else if ((mBmpInfoHandler.mNativeBmpPtr != 0) && mBmpInfoHandler.renderFrame(mShowingFit)){
                         mStatus = Status.PLAYING;
                         mShowingFit = -1;
+                        mUiHandler.post(()->updateViewVisibility());
                         if (!rendered && mReadyListener != null ) {
                             mReadyListener.played(mBmpInfoHandler.filePath);
                         }
@@ -234,6 +274,9 @@ public class ImagePlayer {
         mWorkThread.start();
         mWorkHandler = new Handler(mWorkThread.getLooper());
         mTransaction = new SurfaceControl.Transaction();
+        mViewMode = getProperties(PROP_VIEW_MODE, VIEW_MODE_AUTO_HD);
+        mOsdMark = getProperties(PROP_OSD_MARK, false);
+        mOsdMaxImagePixels = getPanelFrameSize();
     }
 
     public synchronized static ImagePlayer getInstance() {
@@ -269,11 +312,122 @@ public class ImagePlayer {
     }
     public  boolean setDataSource(String filePath) {
         mImageFilePath = filePath;
-        mWorkHandler.removeCallbacks(rotateWork);
-        mWorkHandler.removeCallbacks(rotateCropWork);
-        mWorkHandler.removeCallbacks(ShowFrame);
-        mWorkHandler.removeCallbacks(decodeRunnable);
-        mWorkHandler.post(setDataSourceWork);
+
+        if (mSurfaceView == null || mOsdImageView == null) {
+            RetryUtil.retryIf(TAG + "_setDataSource", mUiHandler,
+                    () -> setDataSourceInternal(mImageFilePath),
+                    () -> (mSurfaceView == null || mOsdImageView == null));
+        } else {
+            setDataSourceInternal(mImageFilePath);
+        }
+        return true;
+    }
+
+    private void setDataSourceInternal(String path) {
+        mIsShowToOsd = isDisplayToOsd(path);
+        Log.d(TAG, "setDataSourceInternal: " + path + ", mIsShowToOsd: " + mIsShowToOsd);
+
+        if (mIsShowToOsd) {
+            if (mOsdImageView.setImagePath(path)) {
+                mStatus = Status.PREPARED;
+                if (mReadyListener != null) {
+                    mReadyListener.Prepared(path);
+                }
+            } else {
+                if (mReadyListener != null) {
+                    mReadyListener.playerr(path);
+                }
+            }
+        } else {
+            mWorkHandler.removeCallbacks(rotateWork);
+            mWorkHandler.removeCallbacks(rotateCropWork);
+            mWorkHandler.removeCallbacks(ShowFrame);
+            mWorkHandler.removeCallbacks(decodeRunnable);
+            mWorkHandler.post(setDataSourceWork);
+        }
+    }
+
+    private void updateViewVisibility() {
+        Log.d(TAG, "updateViewVisibility, mIsShowToOsd: " + mIsShowToOsd);
+        mEmbeddedView.flipView(mIsShowToOsd);
+    }
+
+    /**
+     * set display target mode, OSD only, auto, video only
+     * @param viewMode :VIEW_MODE_FAST_OSD, VIEW_MODE_AUTO_HD, VIEW_MODE_VC_UHD
+     */
+    public void setViewMode(int viewMode) {
+        mViewMode = viewMode;
+    }
+
+    private static int getPanelFrameSize() {
+        final int defaultSize = 100 * 1024 * 1024; // 100 MB;
+        return Math.max(getProperties("ro.hwui.max_texture_allocation_size", defaultSize),
+                defaultSize);
+    }
+
+    private boolean isDisplayToOsd(String filePath) {
+        // Only for gif display to OSD now
+        //return filePath.toLowerCase().endsWith(".gif");
+
+        // Always play gif to osd
+        if (filePath.toLowerCase().endsWith(".gif")) {
+            return true;
+        }
+
+        if (mViewMode == VIEW_MODE_FAST_OSD) {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            Bitmap bitmap = BitmapFactory.decodeFile(filePath);
+            if (bitmap == null) {
+                return true;
+            }
+
+            if (bitmap.getByteCount() > mOsdMaxImagePixels) {
+                Log.e(TAG, "Bitmap is too big, can not be drawn on OSD, show on video");
+                return false;
+            }
+
+            return true;
+        } else if (mViewMode == VIEW_MODE_VC_UHD) {
+            return false;
+        } else if (mViewMode == VIEW_MODE_AUTO_HD) {
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            Bitmap bitmap = BitmapFactory.decodeFile(filePath);
+            if (bitmap == null) {
+                return true;
+            }
+
+            if (bitmap.getByteCount() > mOsdMaxImagePixels) {
+                Log.e(TAG, "Bitmap is too big, can not be drawn on OSD, show on video");
+                return false;
+            }
+
+            int osdWidth = mSurfaceView != null ? mSurfaceView.getWidth() : mOsdWidth;
+            int osdHeight = mSurfaceView != null ? mSurfaceView.getHeight() : mOsdHeight;
+            int videoWidth = mScreenWidth;
+            int videoHeight = mScreenHeight;
+
+            Log.d(TAG, "osdSize: [" + osdWidth + "x" + osdHeight + "]," +
+                    "imageSize: [" + bitmap.getWidth() + "x" + bitmap.getHeight() + "]," +
+                    "videoSize: [" + videoWidth + "x" + videoHeight + "], bitmap.getByteCount: " + bitmap.getByteCount());
+
+            // Max osd allowed limited to 1920x1080
+            int limitedOsdW = Math.min(osdWidth, 1920);
+            int limitedOsdH = Math.min(osdHeight, 1080);
+
+            Log.d(TAG, "limitedOsdW: " + limitedOsdW + ", limitedOsdH: " + limitedOsdH);
+
+            if (videoWidth <= limitedOsdW || videoHeight <= limitedOsdH) {
+                // No need show to video
+                return true;
+            }
+
+            return bitmap.getWidth() <= limitedOsdW && bitmap.getHeight() <= limitedOsdH;
+        }
+
+        // OSD first
         return true;
     }
 
@@ -354,16 +508,38 @@ public class ImagePlayer {
         if (mStatus != Status.PREPARED && mStatus != Status.PLAYING) {
             return false;
         }
-        mShowingFit = fit;
-        if (mSurfaceView == null || mSurfaceView.getSurfaceControl() == null) {
-           mWorkHandler.postDelayed(reshow, 200);
-           return false;
+
+        if (mIsShowToOsd) {
+            if (fit == FIT_DEFAULT || fit == FIT_ORIGINAL) {
+                mOsdImageView.setExtendsScaleType(fit);
+            } else {
+                mOsdImageView.setFit(OsdImageView.intToScaleFit(fit));
+            }
+
+            Log.d(TAG, "mOsdImageView: " + mOsdImageView + ", mOsdImageView.isReady: " + mOsdImageView.isReady());
+
+            RetryUtil.retryIf(TAG + "_show", mUiHandler, ()->{
+                mOsdImageView.show();
+                mStatus = Status.PLAYING;
+                updateViewVisibility();
+                if (mReadyListener != null) {
+                    mReadyListener.played(mImageFilePath);
+                }
+            }, ()->(mOsdImageView == null || !mOsdImageView.isReady()));
+        } else {
+            mShowingFit = fit;
+            if (mSurfaceView == null) {
+                Log.d(TAG, "mSurfaceView invalid, retry after 200ms");
+                mWorkHandler.postDelayed(reshow, 200);
+                return false;
+            }
+            mWorkHandler.post(ShowFrame);
+            Point p = getInitialFrameSize();
+            mSurfaceWidth = p.x;
+            mSurfaceHeight = p.y;
+            setPaintSize(1,1);
         }
-        mWorkHandler.post(ShowFrame);
-        Point p = getInitialFrameSize();
-        mSurfaceWidth = p.x;
-        mSurfaceHeight = p.y;
-        setPaintSize(1,1);
+
         return true;
     }
 
@@ -414,19 +590,30 @@ public class ImagePlayer {
             return false;
         }
 
-        final Point point = viewSizeToAxisSize(width, height);
-        mWorkHandler.post(()->{
-            updateWindowSize(point.x, point.y);
-        });
+        if (mIsShowToOsd) {
+            mEmbeddedView.relayout(width, height);
+        } else {
+            final Point point = viewSizeToAxisSize(width, height);
+            mWorkHandler.post(()->{
+                updateWindowSize(point.x, point.y);
+            });
+        }
 
         return true;
     }
 
-
     public void setDisplay(SurfaceView surfaceview) {
         Log.d(TAG,"setDisplay");
-        mSurfaceView = surfaceview;
-        bindSurface(surfaceview.getHolder());
+        mEmbeddedView = new EmbeddedView(surfaceview.getContext());
+        mEmbeddedView.mountTo(surfaceview, ()->{
+            mOsdImageView = mEmbeddedView.getOsdView();
+            mOsdImageView.setOsdMarked(mOsdMark);
+            mSurfaceView = mEmbeddedView.getSurfaceView();
+            Log.d(TAG, "mSurfaceView and mOsdImageView is ready");
+            surfaceview.setFocusable(false);
+            bindSurface(mSurfaceView.getHolder());
+        }, surfaceview.getWidth(), surfaceview.getHeight());
+
     }
     private void setPaintSize(float sx,float sy) {
         int frameWidth = (int)(mSurfaceWidth*sx);
@@ -448,32 +635,46 @@ public class ImagePlayer {
            }
         }
     };
+
     public int setRotate(int degrees) {
-        mWorkHandler.removeCallbacks(rotateWork);
-        boolean redraw = true;
-        mDegree = degrees;
-        mredraw = redraw;
-        mWorkHandler.post(rotateWork);
-        Point p = getInitialFrameSize();
-        mSurfaceWidth = p.x;
-        mSurfaceHeight = p.y;
-        setPaintSize(1,1);
+        if (mIsShowToOsd) {
+            mOsdImageView.rotate(degrees);
+        } else {
+            mWorkHandler.removeCallbacks(rotateWork);
+            boolean redraw = true;
+            mDegree = degrees;
+            mredraw = redraw;
+            mWorkHandler.post(rotateWork);
+            Point p = getInitialFrameSize();
+            mSurfaceWidth = p.x;
+            mSurfaceHeight = p.y;
+            setPaintSize(1,1);
+        }
+
         return 0;
     }
 
     public int setScale(float sx, float sy) {
-       boolean redraw = true;
-        synchronized(lockObject) {
-            mWorkHandler.post(()->nativeScale(sx, sy, redraw));
+        if (mIsShowToOsd) {
+            mOsdImageView.scale(sx, sy);
+        } else {
+            boolean redraw = true;
+            synchronized (lockObject) {
+                mWorkHandler.post(() -> nativeScale(sx, sy, redraw));
+            }
         }
         //setPaintSize(sx,sy);
         return 0;
     }
 
     public int setTranslate(int xpos,int ypos, float scale) {
-        boolean redraw = true;
-        synchronized(lockObject) {
-            mWorkHandler.post(()->nativeTranslate(xpos, ypos, redraw));
+        if (mIsShowToOsd) {
+            mOsdImageView.translate(xpos, ypos);
+        } else {
+            boolean redraw = true;
+            synchronized(lockObject) {
+                mWorkHandler.post(()->nativeTranslate(xpos, ypos, redraw));
+            }
         }
 //        mWorkHandler.removeCallbacks(ShowFrame);
 //        int frameWidth = (int)(mSurfaceWidth*scale);
@@ -520,7 +721,11 @@ public class ImagePlayer {
     }
 
     public void restore() {
-        mWorkHandler.post(()->nativeRestore());
+        if (mIsShowToOsd) {
+            mOsdImageView.restore();
+        } else {
+            mWorkHandler.post(()->nativeRestore());
+        }
     }
 
     private Runnable rotateCropWork = new Runnable() {
@@ -560,7 +765,7 @@ public class ImagePlayer {
     }
     private boolean checkVideoAxis() {
         SystemControlManager mSystemControlManager = SystemControlManager.getInstance();
-        String deviceoutput = mSystemControlManager.readSysFs(AXIS);
+        String deviceoutput = "3840x2160";//mSystemControlManager.readSysFs(AXIS);
         if (deviceoutput != null && !deviceoutput.isEmpty()) {
             Log.d(TAG,"checkVideoAxis"+deviceoutput);
             String[] axisStr = deviceoutput.split("x");
@@ -575,7 +780,11 @@ public class ImagePlayer {
         }
         return false;
     }
-    public void initPlayer() {
+    public void initPlayer(Context context) {
+        if (mOsdImageView == null) {
+            mOsdImageView = new OsdImageView(context);
+        }
+
         if (!checkVideoAxis()) {
             initParam();
         }else {
@@ -598,6 +807,7 @@ public class ImagePlayer {
             Log.d(TAG,"stop");
             mWorkHandler.removeCallbacks(ShowFrame);
             mWorkHandler.post(this::unbindSurface);
+            mWorkHandler.getLooper().quitSafely();
             mStatus = Status.STOPPED;
         }
     }

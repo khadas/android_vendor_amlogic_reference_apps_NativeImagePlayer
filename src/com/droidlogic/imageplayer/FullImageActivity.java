@@ -267,12 +267,15 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             Log.e(TAG, "runAndShow pic path empty!");
             return;
         }
+
+        mImagePlayer.setPrepareListener(this);
+
         if (!mImagePlayer.setDataSource(mCurPicPath)) {
+            mImagePlayer.setPrepareListener(null);
             mUIHandler.sendEmptyMessageDelayed(NOT_DISPLAY, MSG_DELAY_TIME);
         } else {
            // mSurfaceView.setVisibility(View.VISIBLE);
            paused = false;
-            mImagePlayer.setPrepareListener(this);
         }
     }
 
@@ -803,7 +806,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
     @Override
     public void Prepared(String uriStr) {
         if (paused) {return;}
-        if (mCurPicPath != uriStr) {
+        if (uriStr == null || !uriStr.equals(mCurPicPath)) {
             Log.d(TAG, "not current uri,return directly");
             return;
         }
@@ -927,7 +930,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
         paused = false;
         Log.d(TAG, "onStart");
         mImagePlayer = ImagePlayer.getInstance();
-        mImagePlayer.initPlayer();
+        mImagePlayer.initPlayer(this.getApplicationContext());
         showBmp();
         mUIHandler.sendEmptyMessageDelayed(DISMISS_MENU, DISPLAY_MENU_TIME);
     }
@@ -1097,8 +1100,9 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             Log.i(TAG, "surfaceChanged, format= " + format + ", width= " + width + ", height = " + height);
 
             if (mImagePlayer != null) {
-                mImagePlayer.updateWindowDimension(width, height);
-                mImagePlayer.show(Matrix.ScaleToFit.CENTER.ordinal());
+                if (mImagePlayer.updateWindowDimension(width, height)) {
+                    mImagePlayer.show(Matrix.ScaleToFit.CENTER.ordinal());
+                }
             }
         }
 

@@ -278,18 +278,23 @@ void ImageEffector::render() {
     if (!currentRect.isEmpty() && mFrontImageInfo.isValid()
         && mFrontImageInfo.image->readyToDraw()) {
 
-        SkCanvas* canvas = mGpuRender ?
-                (mGpuDevice->getSurface()->getCanvas()) : (new SkCanvas(mScreenBitmap));
-
-        if (((int)rotation % 90) == 0) {
-            clearDirtyRegion(canvas, currentRect);
-        } else {
-            // Clear all if not integer multiples of 90,
-            // Can not calculate the dirty region
-            canvas->drawColor(SkColorSetARGB(255, 0, 0, 0));
+        if (mTargetCanvas == nullptr) {
+            // Ensure mTargetCanvas is valid.
+            mTargetCanvas = mGpuRender ?
+                            (mGpuDevice->getSurface()->getCanvas()) :
+                            (new SkCanvas(mScreenBitmap));
         }
+        SkCanvas* canvas = mTargetCanvas;
 
-        //canvas->drawColor(SkColorSetARGB(255, 0, 0, 0));
+//        if (((int)rotation % 90) == 0) {
+//            clearDirtyRegion(canvas, currentRect);
+//        } else {
+//            // Clear all if not integer multiples of 90,
+//            // Can not calculate the dirty region
+//            canvas->drawColor(SkColorSetARGB(255, 0, 0, 0));
+//        }
+
+        canvas->drawColor(SkColorSetARGB(255, 0, 0, 0));
 
         canvas->save();
         canvas->clipRect(currentRect);
@@ -309,9 +314,6 @@ void ImageEffector::render() {
 
         if (mGpuRender) {
             readBackPixels(mRenderFinishedCallback != nullptr);
-        } else {
-            // release for gpu render
-            delete canvas;
         }
     }
 }
@@ -485,24 +487,34 @@ void ImageEffector::initScreenCanvas(int width, int height) {
             mGpuDevice = new SkiaGpuDevice(mScreenBitmap.width(), mScreenBitmap.height());
         }
 
-        if (!mGpuDevice->initWithTarget(mScreenBitmap)) {
+        if (mGpuDevice->initWithTarget(mScreenBitmap)) {
+            ALOGD("SkiaGpuDevice init OK!");
+            mTargetCanvas = mGpuDevice->getSurface()->getCanvas();
+        } else {
             ALOGE("Init GpuDevice failed, return to using cpu");
             mGpuRender = false;
             mGpuDevice.clear();
             mGpuDevice = nullptr;
-        } else {
-            ALOGD("SkiaGpuDevice init OK!");
         }
+    } else {
+        ALOGD("Using Cpu rendering");
+        mTargetCanvas = new SkCanvas(mScreenBitmap);
     }
 }
 
-    void ImageEffector::release() {
+void ImageEffector::release() {
     if (mFrontImageInfo.isValid()) {
         mFrontImageInfo.reset();
     }
 
     if (!mScreenBitmap.isNull()) {
         mScreenBitmap.reset();
+    }
+
+    if (!mGpuRender && mTargetCanvas != nullptr) {
+        // release for cpu render
+        delete mTargetCanvas;
+        mTargetCanvas = nullptr;
     }
 }
 

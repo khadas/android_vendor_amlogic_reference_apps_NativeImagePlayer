@@ -443,10 +443,6 @@ static int renderYuv420(UniqueAsyncResult result, int width, int height) {
         dataPtr += 2;
     }
 
-
-//    memcpy(dataPtr, result->data(1), uvLen);
-//    dataPtr += uvLen;
-//    memcpy(dataPtr, result->data(2), uvLen);
     ALOGD("renderYuv420, fill buffer -");
 
     const std::string dumpPath = android::base::GetProperty(std::string(PROP_DUMP_IMAGE_PATH), "");

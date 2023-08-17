@@ -178,6 +178,8 @@ private:
     SkRect mScreenRect;
     SkRegion mLastDirtyRegion;
 
+    SkCanvas* mTargetCanvas{nullptr};
+
     OnRenderFinished mRenderFinishedCallback{nullptr};
 };
 

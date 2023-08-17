@@ -58,13 +58,9 @@ void SkiaGpuDevice::onLastStrongRef(const void */*id*/) {
 
     eglMakeCurrent(mEGLEnv.display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
 
-    if (mSurface) {
-        mSurface.release();
-    }
-
     if (mGrContext) {
+        mGrContext->flushAndSubmit(true);
         mGrContext->abandonContext();
-        mGrContext.release();
     }
 
     mEGLEnv.destroy();
