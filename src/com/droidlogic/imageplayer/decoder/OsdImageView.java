@@ -40,7 +40,6 @@ public class OsdImageView extends ImageView {
 
     private final Handler mUIHandler = new Handler(Looper.getMainLooper());
     private Drawable mDrawable;
-    private boolean mOsdMarked = false;
 
     class EffectParams {
         float scaleX = 1;
@@ -168,10 +167,6 @@ public class OsdImageView extends ImageView {
         mUIHandler.post(this::invalidate);
     }
 
-    public void setOsdMarked(boolean marked) {
-        mOsdMarked = marked;
-    }
-
     @Override
     protected void onDraw(Canvas canvas) {
         Log.d(TAG, "onDraw: ");
@@ -179,16 +174,6 @@ public class OsdImageView extends ImageView {
             canvas.concat(calculateFinalMatrix());
         }
         super.onDraw(canvas);
-
-        if (mOsdMarked) {
-            int saveCount = canvas.getSaveCount();
-            Paint paint = new Paint();
-            paint.setStyle(Paint.Style.STROKE);
-            paint.setStrokeWidth(3);
-            paint.setColor(Color.RED);
-            canvas.drawRect(mImageRect, paint);
-            canvas.restoreToCount(saveCount);
-        }
     }
 
     private Matrix calculateFinalMatrix() {

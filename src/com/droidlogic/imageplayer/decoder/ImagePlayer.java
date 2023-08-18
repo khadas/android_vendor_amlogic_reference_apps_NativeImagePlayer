@@ -21,23 +21,16 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Point;
-import android.graphics.Rect;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.Process;
 import android.os.SystemClock;
 import android.util.Log;
-import android.view.Gravity;
 import android.view.Surface;
 import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
-import android.view.View;
-import android.view.ViewGroup;
-import android.view.ViewParent;
-import android.widget.FrameLayout;
-import android.util.Log;
 import com.droidlogic.app.SystemControlManager;
 
 import java.lang.reflect.Method;
@@ -54,13 +47,14 @@ public class ImagePlayer {
 
     //0: osd, 1: auto, 2: video
     private static final String PROP_VIEW_MODE = "debug.imageplayer.view_mode";
-    private static final String PROP_OSD_MARK = "debug.imageplayer.osd_mark";
+    private static final String PROP_SHOW_IMG_INFO = "debug.imageplayer.show_img_info";
     private final int mOsdMaxImagePixels;
 
     private int mShowingFit = -1;
     private int mViewMode;
-    private boolean mOsdMark;
+    private final boolean mShowImageInfo;
     private boolean mIsShowToOsd = true;
+    private String mDebugImageInfo = "";
 
     /**
      * Always playing image to OSD
@@ -275,7 +269,7 @@ public class ImagePlayer {
         mWorkHandler = new Handler(mWorkThread.getLooper());
         mTransaction = new SurfaceControl.Transaction();
         mViewMode = getProperties(PROP_VIEW_MODE, VIEW_MODE_AUTO_HD);
-        mOsdMark = getProperties(PROP_OSD_MARK, false);
+        mShowImageInfo = getProperties(PROP_SHOW_IMG_INFO, false);
         mOsdMaxImagePixels = getPanelFrameSize();
     }
 
@@ -302,6 +296,16 @@ public class ImagePlayer {
 
     public native static int updateWindowSize(int width, int height);
 
+    private void appendDebugInfo(String infoSegment, boolean post) {
+        if (mShowImageInfo) {
+            if (post) {
+                mDebugImageInfo = mDebugImageInfo.concat(infoSegment);
+            } else { // pre-concat
+                mDebugImageInfo = infoSegment.concat(mDebugImageInfo);
+            }
+        }
+    }
+
     public void setPrepareListener(PrepareReadyListener listener) {
         this.mReadyListener = listener;
         Log.d(TAG, "setPrepared" + listener);
@@ -324,8 +328,14 @@ public class ImagePlayer {
     }
 
     private void setDataSourceInternal(String path) {
+        mDebugImageInfo = "";
         mIsShowToOsd = isDisplayToOsd(path);
         Log.d(TAG, "setDataSourceInternal: " + path + ", mIsShowToOsd: " + mIsShowToOsd);
+
+        {
+            appendDebugInfo(mIsShowToOsd ? "Target: OSD\n" : "Target: Video\n", false);
+            appendDebugInfo(path.substring(path.lastIndexOf("/") + 1) + "\n\n", false);
+        }
 
         if (mIsShowToOsd) {
             if (mOsdImageView.setImagePath(path)) {
@@ -349,7 +359,10 @@ public class ImagePlayer {
 
     private void updateViewVisibility() {
         Log.d(TAG, "updateViewVisibility, mIsShowToOsd: " + mIsShowToOsd);
-        mEmbeddedView.flipView(mIsShowToOsd);
+        if (mEmbeddedView != null) {
+            mEmbeddedView.flipView(mIsShowToOsd);
+            mEmbeddedView.setInfo(mDebugImageInfo);
+        }
     }
 
     /**
@@ -375,14 +388,42 @@ public class ImagePlayer {
             return true;
         }
 
-        if (mViewMode == VIEW_MODE_FAST_OSD) {
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inJustDecodeBounds = true;
-            Bitmap bitmap = BitmapFactory.decodeFile(filePath);
-            if (bitmap == null) {
-                return true;
-            }
+        BitmapFactory.Options options = new BitmapFactory.Options();
+        options.inJustDecodeBounds = true;
+        Bitmap bitmap = BitmapFactory.decodeFile(filePath);
+        if (bitmap == null) {
+            appendDebugInfo("Bad Image" + "\n",true);
+            Log.e(TAG, "Decode image: " + filePath + " failed");
+            return true;
+        }
 
+        int osdLimitedWidth = 1920;
+        int osdLimitedHeight = 1080;
+
+        { // Debug scope
+            String viewMode = null;
+            switch (mViewMode) {
+                case VIEW_MODE_FAST_OSD:
+                    viewMode = "Osd only";
+                    break;
+                case VIEW_MODE_VC_UHD:
+                    viewMode = "Video only";
+                    break;
+                case VIEW_MODE_AUTO_HD:
+                    viewMode = "Auto";
+                    break;
+                default:
+                    viewMode = "Unknown";
+                    break;
+            }
+            appendDebugInfo("ViewMode: " + viewMode + "\n",true);
+            appendDebugInfo("Image size: " + bitmap.getWidth() + "x" + bitmap.getHeight() + "\n",true);
+            appendDebugInfo("OSD size: " + mSurfaceView.getWidth() + " x " + mSurfaceView.getHeight() + "\n", true);
+            appendDebugInfo("OSD limited size: " + osdLimitedWidth + " x " + osdLimitedHeight + "\n", true);
+            appendDebugInfo("Video size: " + mScreenWidth + " x " + mScreenHeight, true);
+        }
+
+        if (mViewMode == VIEW_MODE_FAST_OSD) {
             if (bitmap.getByteCount() > mOsdMaxImagePixels) {
                 Log.e(TAG, "Bitmap is too big, can not be drawn on OSD, show on video");
                 return false;
@@ -392,13 +433,6 @@ public class ImagePlayer {
         } else if (mViewMode == VIEW_MODE_VC_UHD) {
             return false;
         } else if (mViewMode == VIEW_MODE_AUTO_HD) {
-            BitmapFactory.Options options = new BitmapFactory.Options();
-            options.inJustDecodeBounds = true;
-            Bitmap bitmap = BitmapFactory.decodeFile(filePath);
-            if (bitmap == null) {
-                return true;
-            }
-
             if (bitmap.getByteCount() > mOsdMaxImagePixels) {
                 Log.e(TAG, "Bitmap is too big, can not be drawn on OSD, show on video");
                 return false;
@@ -607,7 +641,7 @@ public class ImagePlayer {
         mEmbeddedView = new EmbeddedView(surfaceview.getContext());
         mEmbeddedView.mountTo(surfaceview, ()->{
             mOsdImageView = mEmbeddedView.getOsdView();
-            mOsdImageView.setOsdMarked(mOsdMark);
+            mEmbeddedView.showInfoWindow(mShowImageInfo);
             mSurfaceView = mEmbeddedView.getSurfaceView();
             Log.d(TAG, "mSurfaceView and mOsdImageView is ready");
             surfaceview.setFocusable(false);
@@ -765,7 +799,7 @@ public class ImagePlayer {
     }
     private boolean checkVideoAxis() {
         SystemControlManager mSystemControlManager = SystemControlManager.getInstance();
-        String deviceoutput = "3840x2160";//mSystemControlManager.readSysFs(AXIS);
+        String deviceoutput = mSystemControlManager.readSysFs(AXIS);
         if (deviceoutput != null && !deviceoutput.isEmpty()) {
             Log.d(TAG,"checkVideoAxis"+deviceoutput);
             String[] axisStr = deviceoutput.split("x");

@@ -5,13 +5,12 @@ import android.graphics.Color;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.view.Gravity;
-import android.view.Surface;
 import android.view.SurfaceControlViewHost;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
-import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -26,6 +25,7 @@ public class EmbeddedView extends FrameLayout implements SurfaceHolder.Callback 
     private SurfaceControlViewHost mHost;
     private SurfaceHolder mHolder = null;
     private Runnable mMountFinished;
+    private TextView mInfoView;
 
     public EmbeddedView(@NonNull Context context) {
         this(context, null);
@@ -56,20 +56,7 @@ public class EmbeddedView extends FrameLayout implements SurfaceHolder.Callback 
         mHost = new SurfaceControlViewHost(mContext, mContext.getDisplay(), parent.getHostToken());
         parent.setChildSurfacePackage(Objects.requireNonNull(mHost.getSurfacePackage()));
 
-        mOsdImageView = new OsdImageView(mContext);
-        mSurfaceView = new SurfaceView(mContext);
-        mSurfaceView.getHolder().addCallback(this);
-
-        addView(mSurfaceView, new LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT,
-                Gravity.CENTER_HORIZONTAL | Gravity.TOP));
-
-        addView(mOsdImageView, new LayoutParams(
-                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT,
-                Gravity.CENTER_HORIZONTAL | Gravity.TOP));
-
-        /*Default show SurfaceView*/
-        flipView(false);
+        addSurfaceView();
 
         mHost.setView(this, width, height);
 
@@ -77,11 +64,56 @@ public class EmbeddedView extends FrameLayout implements SurfaceHolder.Callback 
         notifyFinish();
     }
 
+    private void addSurfaceView() {
+        mSurfaceView = new SurfaceView(mContext);
+        mSurfaceView.getHolder().addCallback(this);
+
+        addView(mSurfaceView, new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT,
+                Gravity.CENTER_HORIZONTAL | Gravity.TOP));
+    }
+
+    private void addOsdView() {
+        mOsdImageView = new OsdImageView(mContext);
+        addView(mOsdImageView, new LayoutParams(
+                LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT,
+                Gravity.CENTER_HORIZONTAL | Gravity.TOP));
+
+        /*Default show SurfaceView*/
+        flipView(false);
+    }
+
+    private void addInfoView() {
+        if (mInfoView != null) {
+            return;
+        }
+
+        mInfoView = new TextView(mContext);
+        mInfoView.setBackgroundColor(Color.argb(155, 0, 0, 0));
+        mInfoView.setTextSize(15);
+        mInfoView.setTextAlignment(View.TEXT_ALIGNMENT_VIEW_START);
+        mInfoView.setTextColor(Color.WHITE);
+        mInfoView.setGravity(Gravity.START);
+        mInfoView.setPadding(20, 20, 20, 20);
+        LayoutParams params = new LayoutParams(
+                LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT,
+                Gravity.START | Gravity.TOP);
+        params.leftMargin = params.topMargin = 10;
+        addView(mInfoView, params);
+        mInfoView.setVisibility(View.GONE);
+    }
+
     public void flipView(boolean toOsd) {
         if (toOsd) {
             mOsdImageView.setVisibility(View.VISIBLE);
         } else {
             mOsdImageView.setVisibility(View.INVISIBLE);
+        }
+    }
+
+    public void setInfo(String info) {
+        if (mInfoView != null && (mInfoView.getVisibility() == View.VISIBLE)) {
+            mInfoView.setText(info);
         }
     }
 
@@ -125,6 +157,7 @@ public class EmbeddedView extends FrameLayout implements SurfaceHolder.Callback 
     public void surfaceCreated(@NonNull SurfaceHolder surfaceHolder) {
         mHolder = surfaceHolder;
         Log.d(TAG, "surfaceCreated, mHolder= " + mHolder);
+        addOsdView();
         notifyFinish();
     }
 
@@ -138,5 +171,15 @@ public class EmbeddedView extends FrameLayout implements SurfaceHolder.Callback 
     public void surfaceDestroyed(@NonNull SurfaceHolder surfaceHolder) {
         mHolder = null;
         Log.d(TAG, "surfaceDestroyed, mHolder= " + mHolder);
+    }
+
+    public void showInfoWindow(boolean show) {
+        if (show) {
+            addInfoView();
+        }
+
+        if (mInfoView != null) {
+            mInfoView.setVisibility(show ? View.VISIBLE : View.GONE);
+        }
     }
 }
