@@ -27,6 +27,7 @@ import android.os.Looper;
 import android.os.Process;
 import android.os.SystemClock;
 import android.util.Log;
+import android.util.Size;
 import android.view.Surface;
 import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
@@ -48,12 +49,14 @@ public class ImagePlayer {
     //0: osd, 1: auto, 2: video
     private static final String PROP_VIEW_MODE = "debug.imageplayer.view_mode";
     private static final String PROP_SHOW_IMG_INFO = "debug.imageplayer.show_img_info";
+    private static final String PROP_OSD_LIMITED_SIZE = "debug.imageplayer.osd_limited_size";
     private final int mOsdMaxImagePixels;
 
     private int mShowingFit = -1;
     private int mViewMode;
     private final boolean mShowImageInfo;
     private boolean mIsShowToOsd = true;
+    private Size mOsdLimitedSize;
     private String mDebugImageInfo = "";
 
     /**
@@ -84,7 +87,7 @@ public class ImagePlayer {
     private int mSurfaceHeight;
     private int mSurfaceWidth;
     private PrepareReadyListener mReadyListener;
-    private HandlerThread mWorkThread = new HandlerThread("worker",Process.THREAD_PRIORITY_VIDEO);
+    private HandlerThread mWorkThread;
     private Handler mWorkHandler;
     private Handler mUiHandler = new Handler(Looper.getMainLooper());
     private SurfaceControl.Transaction mTransaction;
@@ -265,12 +268,17 @@ public class ImagePlayer {
     };
 
     private ImagePlayer() {
-        mWorkThread.start();
-        mWorkHandler = new Handler(mWorkThread.getLooper());
         mTransaction = new SurfaceControl.Transaction();
         mViewMode = getProperties(PROP_VIEW_MODE, VIEW_MODE_AUTO_HD);
         mShowImageInfo = getProperties(PROP_SHOW_IMG_INFO, false);
         mOsdMaxImagePixels = getPanelFrameSize();
+
+        try {
+            mOsdLimitedSize = Size.parseSize(getProperties(PROP_OSD_LIMITED_SIZE, "1920x1080"));
+        } catch (NumberFormatException e) {
+            Log.e(TAG, PROP_OSD_LIMITED_SIZE + " format error, using default 1920x1080");
+            mOsdLimitedSize = Size.parseSize("1920x1080");
+        }
     }
 
     public synchronized static ImagePlayer getInstance() {
@@ -397,8 +405,9 @@ public class ImagePlayer {
             return true;
         }
 
-        int osdLimitedWidth = 1920;
-        int osdLimitedHeight = 1080;
+        /* Limiting max image size for displaying to osd */
+        int osdLimitedWidth = mOsdLimitedSize.getWidth();
+        int osdLimitedHeight = mOsdLimitedSize.getHeight();
 
         { // Debug scope
             String viewMode = null;
@@ -448,8 +457,8 @@ public class ImagePlayer {
                     "videoSize: [" + videoWidth + "x" + videoHeight + "], bitmap.getByteCount: " + bitmap.getByteCount());
 
             // Max osd allowed limited to 1920x1080
-            int limitedOsdW = Math.min(osdWidth, 1920);
-            int limitedOsdH = Math.min(osdHeight, 1080);
+            int limitedOsdW = Math.min(osdWidth, osdLimitedWidth);
+            int limitedOsdH = Math.min(osdHeight, osdLimitedHeight);
 
             Log.d(TAG, "limitedOsdW: " + limitedOsdW + ", limitedOsdH: " + limitedOsdH);
 
@@ -543,6 +552,8 @@ public class ImagePlayer {
             return false;
         }
 
+        mShowingFit = fit;
+
         if (mIsShowToOsd) {
             if (fit == FIT_DEFAULT || fit == FIT_ORIGINAL) {
                 mOsdImageView.setExtendsScaleType(fit);
@@ -561,7 +572,6 @@ public class ImagePlayer {
                 }
             }, ()->(mOsdImageView == null || !mOsdImageView.isReady()));
         } else {
-            mShowingFit = fit;
             if (mSurfaceView == null) {
                 Log.d(TAG, "mSurfaceView invalid, retry after 200ms");
                 mWorkHandler.postDelayed(reshow, 200);
@@ -614,30 +624,38 @@ public class ImagePlayer {
 
     public boolean updateWindowDimension(int width, int height) {
         Log.d(TAG, "updateWindowSize: " + width + " x " + height);
-        if (mSurfaceView == null || mSurfaceView.getSurfaceControl() == null) {
-            Log.w(TAG, "Invalid SurfaceView");
-            return false;
-        }
 
         if (width <= 0 || height <= 0) {
             Log.w(TAG, "No need update for invalid or not changed");
             return false;
         }
 
-        if (mIsShowToOsd) {
-            mEmbeddedView.relayout(width, height);
-        } else {
-            final Point point = viewSizeToAxisSize(width, height);
-            mWorkHandler.post(()->{
-                updateWindowSize(point.x, point.y);
-            });
-        }
+        RetryUtil.retryIf(TAG + "_updateWindowDimension", mUiHandler,
+                () -> {
+                    if (mIsShowToOsd) {
+                        mEmbeddedView.relayout(width, height);
+                    } else {
+                        final Point point = viewSizeToAxisSize(width, height);
+                        mWorkHandler.post(()-> updateWindowSize(point.x, point.y));
+                    }
+
+                    if (mStatus == Status.PLAYING && mImageFilePath != null) {
+                        Log.d(TAG, "Replay in updateWindowDimension");
+                        setDataSourceInternal(mImageFilePath);
+                        show(mShowingFit);
+                    }
+                },
+                () -> (mSurfaceView == null || mOsdImageView == null));
 
         return true;
     }
 
     public void setDisplay(SurfaceView surfaceview) {
         Log.d(TAG,"setDisplay");
+        if (mEmbeddedView != null) {
+            mEmbeddedView.release();
+        }
+
         mEmbeddedView = new EmbeddedView(surfaceview.getContext());
         mEmbeddedView.mountTo(surfaceview, ()->{
             mOsdImageView = mEmbeddedView.getOsdView();
@@ -815,6 +833,13 @@ public class ImagePlayer {
         return false;
     }
     public void initPlayer(Context context) {
+        if (mWorkThread != null && mWorkThread.isAlive()) {
+            mWorkThread.quit();
+        }
+        mWorkThread = new HandlerThread("worker",Process.THREAD_PRIORITY_VIDEO);
+        mWorkThread.start();
+        mWorkHandler = new Handler(mWorkThread.getLooper());
+
         if (mOsdImageView == null) {
             mOsdImageView = new OsdImageView(context);
         }
@@ -908,6 +933,20 @@ public class ImagePlayer {
             Class properClass = Class.forName("android.os.SystemProperties");
             Method getMethod = properClass.getMethod("getInt", String.class, int.class);
             defVal = (int) getMethod.invoke(null, key, def);
+        } catch (Exception ex) {
+            ex.printStackTrace();
+        } finally {
+            Log.d(TAG, "getProperty:" + key + " defVal:" + defVal);
+            return defVal;
+        }
+    }
+
+    public static String getProperties(String key, String def) {
+        String defVal = def;
+        try {
+            Class properClass = Class.forName("android.os.SystemProperties");
+            Method getMethod = properClass.getMethod("get", String.class, String.class);
+            defVal = (String) getMethod.invoke(null, key, def);
         } catch (Exception ex) {
             ex.printStackTrace();
         } finally {
