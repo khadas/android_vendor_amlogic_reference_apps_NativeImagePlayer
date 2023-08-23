@@ -788,19 +788,26 @@ public class ImagePlayer {
            }
         }
     };
+
+    /**Instead of setRotate(int degrees)*/
+    @Deprecated
     public int setRotateScale(int degrees, float sx, float sy) {
-        mWorkHandler.removeCallbacks(rotateCropWork);
-        boolean redraw = true;
-        mDegree = degrees;
-        mSx = mSx;
-        mSy = mSy;
-        mredraw = redraw;
-        //mWorkHandler.post(rotateCropWork);
-        mWorkHandler.post(rotateWork);
-        Point p = getInitialFrameSize();
-        mSurfaceWidth = p.x;
-        mSurfaceHeight = p.y;
-        setPaintSize(sx,sy);
+        if (mIsShowToOsd) {
+            mOsdImageView.rotate(degrees);
+        } else {
+            mWorkHandler.removeCallbacks(rotateCropWork);
+            boolean redraw = true;
+            mDegree = degrees;
+            mSx = mSx;
+            mSy = mSy;
+            mredraw = redraw;
+            //mWorkHandler.post(rotateCropWork);
+            mWorkHandler.post(rotateWork);
+            Point p = getInitialFrameSize();
+            mSurfaceWidth = p.x;
+            mSurfaceHeight = p.y;
+            setPaintSize(sx,sy);
+        }
         return 0;
     }
 
