@@ -21,6 +21,8 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Point;
+import android.graphics.drawable.BitmapDrawable;
+import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
@@ -74,6 +76,7 @@ public class ImagePlayer {
 
     private EmbeddedView mEmbeddedView;
     private OsdImageView mOsdImageView;
+    private NetImageLoader mNetImageLoader;
 
     static {
         System.loadLibrary("image_jni");
@@ -327,17 +330,85 @@ public class ImagePlayer {
 
         if (mSurfaceView == null || mOsdImageView == null) {
             RetryUtil.retryIf(TAG + "_setDataSource", mUiHandler,
-                    () -> setDataSourceInternal(mImageFilePath),
+                    () -> setDataSourceChecked(mImageFilePath),
                     () -> (mSurfaceView == null || mOsdImageView == null));
         } else {
-            setDataSourceInternal(mImageFilePath);
+            setDataSourceChecked(mImageFilePath);
         }
         return true;
     }
 
-    private void setDataSourceInternal(String path) {
+    private void setDataSourceChecked(String path) {
         mDebugImageInfo = "";
-        mIsShowToOsd = isDisplayToOsd(path);
+
+        boolean netImage = NetImageLoader.isNetImage(path);
+        mEmbeddedView.showNetImageStateWindow(netImage);
+
+        if (netImage) {
+            loadImageFromInternet(path);
+        } else {
+            mIsShowToOsd = isDisplayToOsd(path);
+            setDataSourceInternal(path, null);
+        }
+    }
+
+    private void loadImageFromInternet(String path) {
+        mNetImageLoader.start();
+        mNetImageLoader.load(path, (phase, drawable, info) -> {
+            if (phase == NetImageLoader.LoadPhase.SUCCESS) {
+                if (info.isAnimated) {
+                    mIsShowToOsd = true;
+                } else if (drawable instanceof BitmapDrawable){
+                    Bitmap bitmap = ((BitmapDrawable) drawable).getBitmap();
+                    if (bitmap != null) {
+                        //TODO: isDisplayToOsd(bitmap); considering show large image to video
+                        mIsShowToOsd = isDisplayToOsd(bitmap); // Just for fill debug info
+                        mIsShowToOsd = true;
+                    } else {
+                        mIsShowToOsd = true;
+                    }
+                }
+
+                if (mReadyListener != null) {
+                    mReadyListener.netImageLoaded(path);
+                }
+
+                setDataSourceInternal(path, drawable);
+            } else {
+                Log.e(TAG, phase.toString());
+
+                if (phase == NetImageLoader.LoadPhase.FAILED) {
+                    if (mReadyListener != null) {
+                        mReadyListener.netImageLoaded(path);
+                        mReadyListener.playerr(path);
+                    }
+                } else {
+                    if (mReadyListener != null) {
+                        mReadyListener.netImageLoading(path);
+                    }
+                }
+            }
+
+            // Update Downloading state
+            switch (phase) {
+                case SUCCESS:
+                    mEmbeddedView.showNetImageStateWindow(false);
+                    break;
+                case FAILED:
+                    mEmbeddedView.setNetImageState(phase.name() + "\n" + phase.phaseDescription);
+                    break;
+                case DOWNLOADING:
+                    mEmbeddedView.setNetImageState(phase.name() + ":" + phase.phaseDescription);
+                    break;
+                default:
+                    mEmbeddedView.setNetImageState(phase.name());
+                    break;
+            }
+        });
+    }
+
+
+    private void setDataSourceInternal(String path, Drawable drawable) {
         Log.d(TAG, "setDataSourceInternal: " + path + ", mIsShowToOsd: " + mIsShowToOsd);
 
         {
@@ -346,7 +417,9 @@ public class ImagePlayer {
         }
 
         if (mIsShowToOsd) {
-            if (mOsdImageView.setImagePath(path)) {
+            boolean ok = (drawable != null) ? mOsdImageView.setDrawable(drawable)
+                    : mOsdImageView.setImagePath(path);
+            if (ok) {
                 mStatus = Status.PREPARED;
                 if (mReadyListener != null) {
                     mReadyListener.Prepared(path);
@@ -405,6 +478,10 @@ public class ImagePlayer {
             return true;
         }
 
+        return isDisplayToOsd(bitmap);
+    }
+
+    private boolean isDisplayToOsd(Bitmap bitmap) {
         /* Limiting max image size for displaying to osd */
         int osdLimitedWidth = mOsdLimitedSize.getWidth();
         int osdLimitedHeight = mOsdLimitedSize.getHeight();
@@ -641,7 +718,7 @@ public class ImagePlayer {
 
                     if (mStatus == Status.PLAYING && mImageFilePath != null) {
                         Log.d(TAG, "Replay in updateWindowDimension");
-                        setDataSourceInternal(mImageFilePath);
+                        setDataSourceChecked(mImageFilePath);
                         show(mShowingFit);
                     }
                 },
@@ -846,6 +923,7 @@ public class ImagePlayer {
         mWorkThread = new HandlerThread("worker",Process.THREAD_PRIORITY_VIDEO);
         mWorkThread.start();
         mWorkHandler = new Handler(mWorkThread.getLooper());
+        mNetImageLoader = new NetImageLoader();
 
         if (mOsdImageView == null) {
             mOsdImageView = new OsdImageView(context);
@@ -871,6 +949,7 @@ public class ImagePlayer {
             mWorkHandler.removeCallbacks(rotateCropWork);
             mWorkHandler.removeCallbacks(decodeRunnable);
             Log.d(TAG,"stop");
+            mNetImageLoader.end();
             mWorkHandler.removeCallbacks(ShowFrame);
             mWorkHandler.post(this::unbindSurface);
             mWorkHandler.getLooper().quitSafely();
@@ -915,6 +994,8 @@ public class ImagePlayer {
     public enum Status {PREPARED, PLAYING, STOPPED, IDLE}
 
     public interface PrepareReadyListener {
+        void netImageLoading(String curUri);
+        void netImageLoaded(String curUri);
         void Prepared(String curUri);
         void played(String curUri);
         void playerr(String curUri);

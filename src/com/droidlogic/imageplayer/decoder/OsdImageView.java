@@ -35,7 +35,6 @@ public class OsdImageView extends ImageView {
     private final RectF mScreenRect = new RectF();
     private final RectF mTmpRect = new RectF();
     private Matrix mMatrix;
-    private Handler mHandler;
     private int mScaleType = ScaleType.FIT_CENTER.ordinal();
 
     private final Handler mUIHandler = new Handler(Looper.getMainLooper());
@@ -78,7 +77,6 @@ public class OsdImageView extends ImageView {
     }
 
     private void init() {
-        mHandler = new Handler();
         mMatrix = new Matrix();
 
         setBackgroundColor(Color.BLACK);
@@ -142,6 +140,11 @@ public class OsdImageView extends ImageView {
     public void restore() {
         mEP.reset();
         refresh();
+    }
+
+    public boolean setDrawable(Drawable drawable) {
+        mDrawable = drawable;
+        return true;
     }
 
     public boolean setImagePath(String path) {
@@ -288,7 +291,7 @@ public class OsdImageView extends ImageView {
                     drawable.getIntrinsicWidth(),
                     drawable.getIntrinsicHeight());
 
-            if (isAnimated() && drawable instanceof AnimatedImageDrawable) {
+            if (drawable instanceof AnimatedImageDrawable) {
                 AnimatedImageDrawable anim = (AnimatedImageDrawable) drawable;
                 anim.setRepeatCount(AnimatedImageDrawable.REPEAT_INFINITE);
                 anim.start();

@@ -75,7 +75,6 @@ import androidx.core.app.ActivityCompat;
 import com.droidlogic.imageplayer.decoder.BmpInfoFactory;
 import com.droidlogic.imageplayer.decoder.ImagePlayer;
 
-
 public class FullImageActivity extends Activity implements View.OnClickListener, View.OnFocusChangeListener, ImagePlayer.PrepareReadyListener, ActivityCompat.OnRequestPermissionsResultCallback{
     public static final int DISPLAY_MENU_TIME = 5000;
     public static final String ACTION_REVIEW = "com.android.camera.action.REVIEW";
@@ -172,6 +171,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
     private int mDegrees;
     private Uri mUri;
     private boolean paused = false;
+    private boolean mIsFreezingInput;
     private Handler mUIHandler = new Handler() {
         @Override
         public void handleMessage(Message msg) {
@@ -259,10 +259,15 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
         return new Size(3840, 2160);
     }
 
+    private boolean isNetImage(String url) {
+        return url != null && (url.startsWith("http") || url.startsWith("https"));
+    }
+
     private void runAndShow() {
         mCurPicPath = getPathByUri(mUri);
         Log.d(TAG, "runAndShow mCurPicPath " + mCurPicPath);
-        if (TextUtils.isEmpty(mCurPicPath) || !new File(mCurPicPath).canRead()) {
+        if (TextUtils.isEmpty(mCurPicPath) ||
+                (!isNetImage(mCurPicPath) && !new File(mCurPicPath).canRead())) {
             mUIHandler.sendEmptyMessage(NOT_DISPLAY);
             Log.e(TAG, "runAndShow pic path empty!");
             return;
@@ -549,6 +554,10 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
 
     private void changePicture(boolean next, boolean forceSkip) {
       //  delaySkip();
+        if (mIsFreezingInput) {
+            return;
+        }
+
         if (mImageList.size() == 0) {
             runOnUiThread(() -> {
                 Toast.makeText(FullImageActivity.this, R.string.list_empty, Toast.LENGTH_LONG).show();
@@ -633,6 +642,10 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         Log.d(TAG, "onKeyDown" + keyCode + "--" + mMenu.getVisibility() + "--" + mDegrees + "--" + event.getRepeatCount());
+        if (mIsFreezingInput) {
+            return false;
+        }
+
         if ((keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_DPAD_CENTER)) {
             if (event.getRepeatCount() == 0) {
                 if (mMenu.getVisibility() == View.VISIBLE) {
@@ -801,6 +814,17 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             Toast.makeText(this, errStr, Toast.LENGTH_SHORT).show();
         });
         mImagePlayer.release();
+    }
+
+    @Override
+    public void netImageLoading(String curUri) {
+        //runOnUiThread(()->Toast.makeText(this, "Internet Image is loading...", Toast.LENGTH_SHORT).show());
+        mIsFreezingInput = true;
+    }
+
+    @Override
+    public void netImageLoaded(String curUri) {
+        mIsFreezingInput = false;
     }
 
     @Override
