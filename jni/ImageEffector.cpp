@@ -99,10 +99,6 @@ bool ImageEffector::setImage(SkBitmap *bitmap, int fit, bool show, bool movie) {
 }
 
 bool ImageEffector::scaleUpdated(float sX, float sY) {
-    if (sX == mFrontImageInfo.scaleX && sY == mFrontImageInfo.scaleY) {
-        return false;
-    }
-
     mFrontImageInfo.scaleX = sX;
     mFrontImageInfo.scaleY = sY;
     return true;
@@ -233,35 +229,33 @@ void ImageEffector::render() {
     SkScalar scaleX = mFrontImageInfo.scaleX;
     SkScalar scaleY = mFrontImageInfo.scaleY;
 
-    if (rotation != -1) {
-        SkRect mappedRect = finalMatrix.mapRect(imageRect);
-        finalMatrix.postRotate(rotation, (float) mappedRect.centerX(),
-                               (float) mappedRect.centerY());
+    SkRect mappedRect = finalMatrix.mapRect(imageRect);
+    finalMatrix.postRotate(rotation, (float) mappedRect.centerX(),
+                           (float) mappedRect.centerY());
 
-        if (!isOriginalFit) {
-            mappedRect = finalMatrix.mapRect(imageRect);
+    if (!isOriginalFit) {
+        mappedRect = finalMatrix.mapRect(imageRect);
 
-            if (isDefaultFit) {
-                // Get original rect for image with out scale
-                SkMatrix originForImage;
-                SkScalar offsetX = (screenRect.width() - imageRect.width()) / 2.f;
-                SkScalar offsetY = (screenRect.height() - imageRect.height()) / 2.f;
-                originForImage.postTranslate(offsetX, offsetY);
-                originForImage.postRotate(rotation, screenRect.centerX(), screenRect.centerY());
-                SkRect originRotRect = originForImage.mapRect(imageRect);
+        if (isDefaultFit) {
+            // Get original rect for image with out scale
+            SkMatrix originForImage;
+            SkScalar offsetX = (screenRect.width() - imageRect.width()) / 2.f;
+            SkScalar offsetY = (screenRect.height() - imageRect.height()) / 2.f;
+            originForImage.postTranslate(offsetX, offsetY);
+            originForImage.postRotate(rotation, screenRect.centerX(), screenRect.centerY());
+            SkRect originRotRect = originForImage.mapRect(imageRect);
 
-                SkMatrix m;
-                if (screenRect.contains(originRotRect)) {
-                    m.setRectToRect(mappedRect, originRotRect, SkMatrix::ScaleToFit::kFill_ScaleToFit);
-                } else {
-                    m.setRectToRect(mappedRect, screenRect, SkMatrix::ScaleToFit::kCenter_ScaleToFit);
-                }
-                finalMatrix.postConcat(m);
+            SkMatrix m;
+            if (screenRect.contains(originRotRect)) {
+                m.setRectToRect(mappedRect, originRotRect, SkMatrix::ScaleToFit::kFill_ScaleToFit);
             } else {
-                SkMatrix m;
-                m.setRectToRect(mappedRect, screenRect, requestFit);
-                finalMatrix.postConcat(m);
+                m.setRectToRect(mappedRect, screenRect, SkMatrix::ScaleToFit::kCenter_ScaleToFit);
             }
+            finalMatrix.postConcat(m);
+        } else {
+            SkMatrix m;
+            m.setRectToRect(mappedRect, screenRect, requestFit);
+            finalMatrix.postConcat(m);
         }
     }
 
@@ -286,15 +280,15 @@ void ImageEffector::render() {
         }
         SkCanvas* canvas = mTargetCanvas;
 
-//        if (((int)rotation % 90) == 0) {
-//            clearDirtyRegion(canvas, currentRect);
-//        } else {
-//            // Clear all if not integer multiples of 90,
-//            // Can not calculate the dirty region
-//            canvas->drawColor(SkColorSetARGB(255, 0, 0, 0));
-//        }
+        if (((int)rotation % 90) == 0) {
+            clearDirtyRegion(canvas, currentRect);
+        } else {
+            // Clear all if not integer multiples of 90,
+            // Can not calculate the dirty region
+            canvas->drawColor(SkColorSetARGB(255, 0, 0, 0));
+        }
 
-        canvas->drawColor(SkColorSetARGB(255, 0, 0, 0));
+        //canvas->drawColor(SkColorSetARGB(255, 0, 0, 0));
 
         canvas->save();
         canvas->clipRect(currentRect);
@@ -520,11 +514,7 @@ void ImageEffector::release() {
 
 void ImageEffector::reset() {
     if (mFrontImageInfo.isValid()) {
-        mFrontImageInfo.translateX = mFrontImageInfo.translateY = 0;
-        mFrontImageInfo.rotation = -1;
-        mFrontImageInfo.scaleX = 1;
-        mFrontImageInfo.scaleY = 1;
-
+        mFrontImageInfo.resetEffect();
         render();
     }
 }

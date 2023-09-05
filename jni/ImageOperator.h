@@ -98,6 +98,8 @@ class ImageOperator{
         void stopShown();
         void rgbToYuv420(uint8_t* rgbBuf, size_t width, size_t height, uint8_t* yPlane,
         uint8_t* crPlane, uint8_t* cbPlane, size_t chromaStep, size_t yStride, size_t chromaStride, SkColorType colorType);
+        void rgbToYuv444(uint8_t* rgbBuf, size_t width, size_t height,uint8_t* outBuf,
+            SkColorType colorType, bool yuvOrder = false);
         int show(void* addr);
         void saveBmp(const char *buf, const char* url,int size);
     private:

@@ -646,6 +646,8 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             return false;
         }
 
+        final int translateStep = Math.round(mScale * 12);
+
         if ((keyCode == KeyEvent.KEYCODE_MENU || keyCode == KeyEvent.KEYCODE_DPAD_CENTER)) {
             if (event.getRepeatCount() == 0) {
                 if (mMenu.getVisibility() == View.VISIBLE) {
@@ -674,9 +676,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             if (isScaleModel) {
                 mUIHandler.removeMessages(SHOW_LEFT_ANIM);
                 mUIHandler.sendEmptyMessage(SHOW_LEFT_ANIM);
-                if (!translate(-10, 0)) {
-                    Toast.makeText(FullImageActivity.this, R.string.not_display, Toast.LENGTH_LONG).show();
-                }
+                translate(translateStep, 0);
             } else if (event.getRepeatCount() == 0) {
                 changePicture(false, true);
             }
@@ -685,18 +685,14 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             if (isScaleModel) {
                 mUIHandler.removeMessages(SHOW_TOP_ANIM);
                 mUIHandler.sendEmptyMessage(SHOW_TOP_ANIM);
-                if (!translate(0, -10)) {
-                    Toast.makeText(FullImageActivity.this, R.string.not_display, Toast.LENGTH_LONG).show();
-                }
+                translate(0, translateStep);
             }
             return true;
         } else if (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT && mMenu.getVisibility() != View.VISIBLE) {
             if (isScaleModel) {
                 mUIHandler.removeMessages(SHOW_RIGHT_ANIM);
                 mUIHandler.sendEmptyMessage(SHOW_RIGHT_ANIM);
-                if (!translate(10, 0)) {
-                    Toast.makeText(FullImageActivity.this, R.string.not_display, Toast.LENGTH_LONG).show();
-                }
+                translate(-translateStep, 0);
             } else if (event.getRepeatCount() == 0) {
                 changePicture(true, true);
             }
@@ -705,9 +701,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             if (isScaleModel) {
                 mUIHandler.removeMessages(SHOW_BOTTOM_ANIM);
                 mUIHandler.sendEmptyMessage(SHOW_BOTTOM_ANIM);
-                if (!translate(0, 10)) {
-                    Toast.makeText(FullImageActivity.this, R.string.not_display, Toast.LENGTH_LONG).show();
-                }
+                translate(0, -translateStep);
             }
             return true;
         }

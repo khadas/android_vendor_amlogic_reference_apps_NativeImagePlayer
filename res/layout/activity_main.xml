@@ -128,8 +128,8 @@
 
     <ImageView
         android:id="@+id/left_array"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
         android:src="@drawable/left"
         android:visibility="invisible"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -139,8 +139,8 @@
 
     <ImageView
         android:id="@+id/right_array"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
         android:src="@drawable/right"
         android:visibility="invisible"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -150,8 +150,8 @@
 
     <ImageView
         android:id="@+id/top_array"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
         android:src="@drawable/top"
         android:visibility="invisible"
         app:layout_constraintLeft_toLeftOf="parent"
@@ -161,8 +161,8 @@
 
     <ImageView
         android:id="@+id/bottom_array"
-        android:layout_width="100dp"
-        android:layout_height="100dp"
+        android:layout_width="50dp"
+        android:layout_height="50dp"
         android:src="@drawable/bottom"
         android:visibility="invisible"
         app:layout_constraintBottom_toBottomOf="parent"

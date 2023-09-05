@@ -67,7 +67,7 @@ private:
         std::unique_ptr<SkBitmap> image = nullptr;
         int32_t width;
         int32_t height;
-        float rotation = -1;
+        float rotation = 0;
         float scaleX = 1;
         float scaleY = 1;
         float translateX = 0;
@@ -87,7 +87,7 @@ private:
         }
 
         void resetEffect() {
-            rotation = -1;
+            rotation = 0;
             scaleX = 1;
             scaleY = 1;
             translateX = 0;

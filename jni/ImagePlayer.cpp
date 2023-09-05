@@ -21,6 +21,8 @@ using namespace android;
 //using namespace android::bitmap;
 #define DEFAULT_WIDTH 1920
 #define DEFAULT_HEIGHT 1080
+#define Y_PIXEL_BLACK 0x0
+#define UV_PIXEL_BLACK 0x80
 #define GRALLOC1_VIDEO 1ULL << 17
 #define PROPERTY "vendor.display-size"
 #define PROP_DUMP_IMAGE_PATH "debug.image_player.dump_path"
@@ -154,7 +156,8 @@ static int initParam(JNIEnv *env, jobject entity) {
     return ret;
 }
 
-void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface, jint surfaceWidth, jint surfaceHeight){
+void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface, jint surfaceWidth, jint surfaceHeight,
+        jboolean usingYuv444){
     sp<IGraphicBufferProducer> new_st = NULL;
     jnienv = env;
     mOsdWidth = surfaceWidth;
@@ -181,11 +184,16 @@ void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface, jint surfaceWi
         mNativeWindow = new Surface(new_st,/*controlledByApp*/false);
         if (mEffector) mEffector.clear();
 
+        int format = usingYuv444 ? HAL_PIXEL_FORMAT_YCBCR_444_888 : HAL_PIXEL_FORMAT_YCRCB_420_SP;
+        bool isYuv420 = format == HAL_PIXEL_FORMAT_YCRCB_420_SP;
+
+        ALOGD("bindSurface, format: %s", (isYuv420 ? "HAL_PIXEL_FORMAT_YCRCB_420_SP" : "HAL_PIXEL_FORMAT_YCBCR_444_888"));
+
         bool gpuRender = android::base::GetBoolProperty(std::string(PROP_CONF_GPU_RENDER), true);
         mEffector = new ImageEffector(surfaceWidth, surfaceHeight, gpuRender,
-                                      [](UniqueAsyncResult result, int width, int height) {
+                                      isYuv420 ? ([](UniqueAsyncResult result, int width, int height) {
                                           renderYuv420(std::move(result), width, height);
-                                      });
+                                      }) : nullptr);
 
         ALOGI("before connect");
         native_window_api_connect(mNativeWindow.get(),NATIVE_WINDOW_API_MEDIA);
@@ -195,7 +203,7 @@ void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface, jint surfaceWi
         //CHECK_EQ(0,native_window_set_usage(mNativeWindow.get(), GRALLOC1_PRODUCER_USAGE_CAMERA));
         native_window_set_scaling_mode(mNativeWindow.get(),NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW);
         //CHECK_EQ(OK, native_window_set_scaling_mode(mNativeWindow.get(),NATIVE_WINDOW_SCALING_MODE_FREEZE));
-        native_window_set_buffers_format(mNativeWindow.get(), HAL_PIXEL_FORMAT_YCrCb_420_SP);
+        native_window_set_buffers_format(mNativeWindow.get(), format);
         native_window_set_auto_refresh(mNativeWindow.get(),true);
         imageplayer = new ImageOperator(env);
         imageplayer->setSurfaceSize(mFrameWidth,mFrameHeight);
@@ -357,41 +365,52 @@ static int render(int32_t width, int32_t height, void *data, size_t inLen, SkCol
     }
     if (img == NULL) return -1;
 
-    if (clearBuffer) {
-        int yLen = buf->height * buf->stride;
-        memset(img, 0, yLen);
-        memset(img + yLen, 128, yLen/2);
-    }
-
-    uint8_t* yPlane = img;
-    uint8_t* uPlane = img + buf->stride*buf->height;
-    uint8_t* vPlane = uPlane + 1;
-    size_t chromaStep = 2;
-    size_t yStride = buf->stride;
-    size_t chromaStride =  buf->stride;
-    uint8_t* pixelBuffer = (uint8_t*)data;
-    if (!isShown) return -1;
-    imageplayer->rgbToYuv420(pixelBuffer, width, height, yPlane,
-                    uPlane, vPlane, chromaStep, yStride, chromaStride, colorType);
-
-    const std::string dumpPath = android::base::GetProperty(std::string(PROP_DUMP_IMAGE_PATH), "");
+    bool isYuv420 = buf->format == HAL_PIXEL_FORMAT_YCRCB_420_SP;
+    const std::string dumpPath = android::base::GetProperty(std::string(PROP_DUMP_IMAGE_PATH),"");
     bool dump = !dumpPath.empty() && (access(dumpPath.c_str(), F_OK) == 0);
-    ALOGI("Debug path: %s, dump: %d", dumpPath.c_str(), dump);
-    if (dump) {
-        imageplayer->saveBmp((const char*)img,dumpPath.c_str(), buf->height* buf->stride*3/2);
+    ALOGI("Debug path: %s, dump %s: %d", (isYuv420 ? "yuv420" : "yuv444"), dumpPath.c_str(), dump);
+
+    if (isYuv420) {
+        if (clearBuffer) {
+            int yLen = buf->height * buf->stride;
+            memset(img, Y_PIXEL_BLACK, yLen);
+            memset(img + yLen, UV_PIXEL_BLACK, yLen / 2);
+        }
+
+        uint8_t *yPlane = img;
+        uint8_t *uPlane = img + buf->stride * buf->height;
+        uint8_t *vPlane = uPlane + 1;
+        size_t chromaStep = 2;
+        size_t yStride = buf->stride;
+        size_t chromaStride = buf->stride;
+        uint8_t *pixelBuffer = (uint8_t *) data;
+        if (!isShown) return -1;
+        imageplayer->rgbToYuv420(pixelBuffer, width, height, yPlane,
+                                 uPlane, vPlane, chromaStep, yStride, chromaStride, colorType);
+
+        if (dump) {
+            imageplayer->saveBmp((const char *) img, dumpPath.c_str(),
+                                 buf->height * buf->stride * 3 / 2);
+        }
+    } else { //yuv444
+        memset(img, Y_PIXEL_BLACK, buf->height * buf->stride * 3);
+        uint8_t *pixelBuffer = (uint8_t *) data;
+        if (!isShown) return -1;
+
+        if (dump) {
+            // Need make yuv order is y-u-v.
+            imageplayer->rgbToYuv444(pixelBuffer, width, height, img, colorType, true);
+            imageplayer->saveBmp((const char *) img, dumpPath.c_str(),
+                                 buf->height * buf->stride * 3);
+        }
+
+        imageplayer->rgbToYuv444(pixelBuffer, width, height, img, colorType);
     }
-//    mMemory.releaseMem();
-//    if (isShown && !mMemory.allocmem(buf->height*buf->width *3)) {
-//        ALOGE("----------allocate----------");
-//        mMemory.setUsed(true);
-//        memset(mMemory.getmem(),Y_PIXEL_BLACK,buf->height * buf->stride*3);
-//        memcpy(mMemory.getmem(),img,buf->height * buf->stride*3);
-//        mMemory.setUsed(false);
-//    }
+
     mapper.unlock(buf->handle);
 
     mNativeWindow->queueBuffer(mNativeWindow.get(), buf,  -1);
-    img = NULL;
+    img = nullptr;
     return NO_ERROR;
 }
 
@@ -526,7 +545,8 @@ static jint nativeShow(JNIEnv *env, jclass clz, jlong jbitmap, int fit, jboolean
 static jint rotateScaleCrop(JNIEnv* env, jclass clz,jint rotation, jfloat sx,jfloat sy, jboolean redraw) {
     ALOGD("ImageEffector, %s", __FUNCTION__ );
     int ret = 0;
-    if (mEffector->rotate(rotation, true, redraw) && !mEffector->isAsyncRender()) {
+    bool ok = mEffector->rotate(rotation, true, false) && mEffector->scale(sx, sy, redraw);
+    if (ok && !mEffector->isAsyncRender()) {
         auto bitmap = mEffector->bitmap();
         uint8_t* pixelBuffer = (uint8_t*)bitmap.getPixels();
         ret = render(bitmap.width(),bitmap.height(),pixelBuffer,bitmap.width()*bitmap.height(),bitmap.colorType());
@@ -751,7 +771,7 @@ static int transform(JNIEnv *env, jclass clz, jint rotation, jfloat sx, jfloat s
 
 static const JNINativeMethod gImagePlayerMethod[] = {
     {"initParam",           "()I",     (void*)initParam},
-    {"bindSurface",           "(Landroid/view/Surface;II)V",          (void*)bindSurface },
+    {"bindSurface",           "(Landroid/view/Surface;IIZ)V",          (void*)bindSurface },
     {"nativeUnbindSurface",           "()V",          (void*)unbindSurface },
     {"nativeShow",                "(JIZ)I",                               (void*)nativeShow },
     {"nativeScale",               "(FFZ)I",                             (void*)nativeScale},

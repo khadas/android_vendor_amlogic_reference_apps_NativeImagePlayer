@@ -109,36 +109,39 @@ public class OsdImageView extends ImageView {
         return mImageType == IMAGE_TYPE_GIF;
     }
 
-    public void scale(float x, float y) {
+    public OsdImageView scale(float x, float y) {
         if (mEP.scaleX == x && mEP.scaleY == y)
-            return;
+            return this;
 
         mEP.scaleX = x;
         mEP.scaleY = y;
-
-        refresh();
+        return this;
     }
 
-    public void translate(float x, float y) {
+    public OsdImageView translate(float x, float y) {
         if (mEP.transX == x && mEP.transY == y)
-            return;
+            return this;
 
         mEP.transX = x;
         mEP.transY = y;
-        refresh();
+        return this;
     }
 
 
-    public void rotate(float degree) {
+    public OsdImageView rotate(float degree) {
         if (mEP.rotDegree == degree)
-            return;
+            return this;
 
         mEP.rotDegree = degree;
-        refresh();
+        return this;
     }
 
-    public void restore() {
+    public OsdImageView resetTransform() {
         mEP.reset();
+        return this;
+    }
+
+    public void commit() {
         refresh();
     }
 

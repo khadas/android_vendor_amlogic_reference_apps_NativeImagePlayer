@@ -52,11 +52,13 @@ public class ImagePlayer {
     private static final String PROP_VIEW_MODE = "debug.imageplayer.view_mode";
     private static final String PROP_SHOW_IMG_INFO = "debug.imageplayer.show_img_info";
     private static final String PROP_OSD_LIMITED_SIZE = "debug.imageplayer.osd_limited_size";
+    private static final String PROP_VIDEO_IMAGE_FORMAT_YUV444 = "debug.imageplayer.video_fmt_444";
     private final int mOsdMaxImagePixels;
 
     private int mShowingFit = -1;
     private int mViewMode;
     private final boolean mShowImageInfo;
+    private final boolean mVideoImageUsingYuv444;
     private boolean mIsShowToOsd = true;
     private Size mOsdLimitedSize;
     private String mDebugImageInfo = "";
@@ -274,6 +276,7 @@ public class ImagePlayer {
         mTransaction = new SurfaceControl.Transaction();
         mViewMode = getProperties(PROP_VIEW_MODE, VIEW_MODE_AUTO_HD);
         mShowImageInfo = getProperties(PROP_SHOW_IMG_INFO, false);
+        mVideoImageUsingYuv444 = getProperties(PROP_VIDEO_IMAGE_FORMAT_YUV444, false);
         mOsdMaxImagePixels = getPanelFrameSize();
 
         try {
@@ -412,7 +415,8 @@ public class ImagePlayer {
         Log.d(TAG, "setDataSourceInternal: " + path + ", mIsShowToOsd: " + mIsShowToOsd);
 
         {
-            appendDebugInfo(mIsShowToOsd ? "Target: OSD\n" : "Target: Video\n", false);
+            appendDebugInfo(mIsShowToOsd ? "Target: OSD\n" : "Target: Video(" +
+                    (mVideoImageUsingYuv444 ? "yuv444" : "yuv420") + ")\n", false);
             appendDebugInfo(path.substring(path.lastIndexOf("/") + 1) + "\n\n", false);
         }
 
@@ -565,13 +569,11 @@ public class ImagePlayer {
 
         final int fSurfaceWidth = surfaceWidth;
         final int fSurfaceHeight = surfaceHeight;
-        mWorkHandler.post(new Runnable() {
-            @Override
-            public void run() {
-                Log.i(TAG, "bindSurface, Screen size: [" + fSurfaceWidth + " x " + fSurfaceHeight + "]");
-                bindSurface(holder.getSurface(), fSurfaceWidth, fSurfaceHeight);
-                bindSurface = true;
-            }
+        mWorkHandler.post(() -> {
+            Log.i(TAG, "bindSurface, Screen size: [" + fSurfaceWidth + " x " + fSurfaceHeight +
+                    "], usingYuv444: " + mVideoImageUsingYuv444);
+            bindSurface(holder.getSurface(), fSurfaceWidth, fSurfaceHeight, mVideoImageUsingYuv444);
+            bindSurface = true;
         });
 
     }
@@ -767,7 +769,7 @@ public class ImagePlayer {
 
     public int setRotate(int degrees) {
         if (mIsShowToOsd) {
-            mOsdImageView.rotate(degrees);
+            mOsdImageView.rotate(degrees).commit();
         } else {
             mWorkHandler.removeCallbacks(rotateWork);
             boolean redraw = true;
@@ -785,7 +787,7 @@ public class ImagePlayer {
 
     public int setScale(float sx, float sy) {
         if (mIsShowToOsd) {
-            mOsdImageView.scale(sx, sy);
+            mOsdImageView.scale(sx, sy).commit();
         } else {
             boolean redraw = true;
             synchronized (lockObject) {
@@ -798,7 +800,7 @@ public class ImagePlayer {
 
     public int setTranslate(int xpos,int ypos, float scale) {
         if (mIsShowToOsd) {
-            mOsdImageView.translate(xpos, ypos);
+            mOsdImageView.translate(xpos, ypos).commit();
         } else {
             boolean redraw = true;
             synchronized(lockObject) {
@@ -851,7 +853,7 @@ public class ImagePlayer {
 
     public void restore() {
         if (mIsShowToOsd) {
-            mOsdImageView.restore();
+            mOsdImageView.resetTransform().commit();
         } else {
             mWorkHandler.post(()->nativeRestore());
         }
@@ -861,7 +863,7 @@ public class ImagePlayer {
          @Override
         public void run() {
            synchronized(lockObject) {
-                nativeRotateScaleCrop(mDegree, mSx, mSy, mredraw);
+               mWorkHandler.post(()->nativeRotateScaleCrop(mDegree, mSx, mSy, mredraw));
            }
         }
     };
@@ -870,16 +872,17 @@ public class ImagePlayer {
     @Deprecated
     public int setRotateScale(int degrees, float sx, float sy) {
         if (mIsShowToOsd) {
-            mOsdImageView.rotate(degrees);
+            mOsdImageView.rotate(degrees)
+                    .scale(sx, sy)
+                    .commit();
         } else {
             mWorkHandler.removeCallbacks(rotateCropWork);
             boolean redraw = true;
             mDegree = degrees;
-            mSx = mSx;
-            mSy = mSy;
+            mSx = sx;
+            mSy = sy;
             mredraw = redraw;
-            //mWorkHandler.post(rotateCropWork);
-            mWorkHandler.post(rotateWork);
+            mWorkHandler.post(rotateCropWork);
             Point p = getInitialFrameSize();
             mSurfaceWidth = p.x;
             mSurfaceHeight = p.y;
@@ -935,7 +938,8 @@ public class ImagePlayer {
             initVideoParam();
         }
     }
-    private native void bindSurface(Surface surface, int surfaceWidth, int surfaceHeight);
+
+    private native void bindSurface(Surface surface, int surfaceWidth, int surfaceHeight, boolean usingYuv444);
 
     private native void nativeUnbindSurface();
 

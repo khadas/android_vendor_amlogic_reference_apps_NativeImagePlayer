@@ -182,6 +182,7 @@ void ImageOperator::stopShown() {
     ALOGE("---------stopShown--------");
     isShown = false;
 }
+
 void ImageOperator::saveBmp(const char *buf, const char* url,int size) {
     int fd = -1;
     int length = 0;
@@ -419,8 +420,54 @@ void ImageOperator::rgbToYuv420(uint8_t* rgbBuf, size_t width, size_t height, ui
             cbPlane += chromaStride;
         }
     }
-
 }
+
+void  ImageOperator::rgbToYuv444(uint8_t* rgbBuf, size_t width, size_t height,uint8_t* outBuf, SkColorType colorType, bool yuvOrder){
+    isShown = true;
+    uint8_t R, G, B;
+    size_t index = 0;
+    size_t outindex = 0;
+
+    ColorTransform& colorTransform = (width <= 720) ? mTransform_bt601_limited : mTransform_bt709_limited;
+
+    for (size_t j = 0; j < height; j++) {
+        int stride = GRALLOC_ALIGN(width, 32); // (width % 32) ? ((width + 32) / 32 * 32) : width;
+        for (size_t i = 0; i < stride; i++) {
+            if (!isShown) return;
+            if (i<width) {
+                if (colorType == kAlpha_8_SkColorType) {
+                    uint8_t gray = rgbBuf[index++];
+                    R = gray;
+                    G = gray;
+                    B = gray;
+                }else {
+                    R = rgbBuf[index++];
+                    G = rgbBuf[index++];
+                    B = rgbBuf[index++];
+                    // Skip alpha
+                    index++;
+                }
+            }else {
+                R = 0;
+                G = 0;
+                B = 0;
+            }
+
+            if (yuvOrder) {
+                //yuv
+                outBuf[outindex++] = colorTransform.y(R, G, B);
+                outBuf[outindex++] = colorTransform.u(R, G, B);
+                outBuf[outindex++] = colorTransform.v(R, G, B);
+            } else {
+                //uvy
+                outBuf[outindex++] = colorTransform.u(R, G, B);
+                outBuf[outindex++] = colorTransform.v(R, G, B);
+                outBuf[outindex++] = colorTransform.y(R, G, B);
+            }
+        }
+    }
+}
+
 int ImageOperator::convertARGB8888toYUYV(void *dst, const SkBitmap *src) {
     uint8_t *pDst = (uint8_t*)dst;
     uint8_t *pSrc = (uint8_t*)src->getPixels();
