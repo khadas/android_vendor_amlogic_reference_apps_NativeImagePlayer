@@ -108,7 +108,10 @@ jlong setDataSource(JNIEnv *env, jobject obj1, jstring filePath){
     if (!androidCodec.get()) {
 
         ALOGE("androidCodec cannot get");
-        return false;
+        stream->close();
+        delete stream;
+        stream = NULL;
+        return 0;
     }
 
     const auto& info = androidCodec->getInfo();
@@ -156,6 +159,9 @@ bool decodeInner(JNIEnv *env, jobject obj1, jlong nativePtr, jint targetWidth, j
     if (!codec.get()) {
 
         ALOGE("androidCodec cannot get");
+        stream->close();
+        delete stream;
+        stream = NULL;
         return false;
     }
     SkImageInfo imageInfo = codec->getInfo();
@@ -215,7 +221,10 @@ bool decodeInner(JNIEnv *env, jobject obj1, jlong nativePtr, jint targetWidth, j
         msg.printf("OOM allocating Bitmap with dimensions %i x %i",
                scaleWidth, scaleHeight);
         jniThrowException(env, "java/lang/IllegalArgumentException", msg.c_str());
-        return 0;
+        stream->close();
+        delete stream;
+        stream = NULL;
+        return false;
     }
     do {
         SkCodec::Result result = codec->getAndroidPixels(scaledInfo, bmp.getPixels(),
@@ -234,13 +243,17 @@ bool decodeInner(JNIEnv *env, jobject obj1, jlong nativePtr, jint targetWidth, j
             if (!bmp.isNull()) {
                 bmp.reset();
             }
-            return NULL;
+            stream->close();
+            delete stream;
+            stream = NULL;
+            return false;
         }
     }while(retry);
     jclass bmpinfo = FindClassOrDie(env,"com/droidlogic/imageplayer/decoder/BmpInfo");
     bmphandler = GetFieldIDOrDie(env,bmpinfo,"mNativeBmpPtr","J");
     nativeBitmap->setImmutable();
     env->SetLongField(obj1,bmphandler,reinterpret_cast<jlong>(nativeBitmap.release()));
+    stream->close();
     return true;
   }
 bool nativeRenderFrame(JNIEnv *env, jobject obj1){
@@ -255,6 +268,13 @@ void nativeRelease(JNIEnv *env, jobject obj1,jlong nativePtr){
         auto ptr= reinterpret_cast<VBitmap*>(bmp);
         SkSafeUnref(ptr);
     }
+    SkFILEStream* stream = reinterpret_cast<SkFILEStream*>(nativePtr);
+    if (stream != NULL) {
+        stream->close();
+        delete stream;
+        stream = NULL;
+    }
+
 }
 
 static const JNINativeMethod gImagePlayerMethod[] = {

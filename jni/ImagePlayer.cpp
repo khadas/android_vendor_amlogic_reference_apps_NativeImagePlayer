@@ -49,7 +49,7 @@ static jfieldID mImagePlayer_ScreenHeight;
 static jfieldID mImagePlayer_VideoScale;
 
 
-static auto am_gralloc_get_omx_osd_producer_usage = []()->uint64_t {
+static auto image_am_gralloc_get_omx_osd_producer_usage = []()->uint64_t {
     enum BufferUsage {
         GPU_RENDER_TARGET = 1 << 9,
         VIDEO_DECODER = 1 << 22,
@@ -198,7 +198,7 @@ void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface, jint surfaceWi
         ALOGI("before connect");
         native_window_api_connect(mNativeWindow.get(),NATIVE_WINDOW_API_MEDIA);
         ALOGI("set native window overlay %0x",GRALLOC1_PRODUCER_USAGE_CAMERA);
-        CHECK_EQ(0,native_window_set_usage(mNativeWindow.get(), am_gralloc_get_omx_osd_producer_usage()));
+        CHECK_EQ(0,native_window_set_usage(mNativeWindow.get(), image_am_gralloc_get_omx_osd_producer_usage()));
         //CHECK_EQ(0,native_window_set_usage(mNativeWindow.get(), am_gralloc_get_video_decoder_full_buffer_usage()));
         //CHECK_EQ(0,native_window_set_usage(mNativeWindow.get(), GRALLOC1_PRODUCER_USAGE_CAMERA));
         native_window_set_scaling_mode(mNativeWindow.get(),NATIVE_WINDOW_SCALING_MODE_SCALE_TO_WINDOW);
@@ -223,9 +223,11 @@ void unbindSurface(){
     mLastHeight = 0;
     mLastTransform = 0;
     mLastTransform = 0;
-    imageplayer->stopShown();
-    if (!mMemory.getIsUsed()) {
-        mMemory.releaseMem();
+    if (imageplayer != NULL) {
+        imageplayer->stopShown();
+        if (!mMemory.getIsUsed()) {
+            mMemory.releaseMem();
+        }
     }
     if (mNativeWindow != NULL) {
        // CHECK_EQ(OK,native_window_api_disconnect(mNativeWindow.get(), NATIVE_WINDOW_API_EGL));
@@ -267,7 +269,11 @@ static int rotate(JNIEnv *env, jclass clz,jint rotation, jboolean redraw) {
 
 static int nativeUpdateWindowSize(JNIEnv *env, jclass clz, jint width, jint height) {
     ALOGD("ImageEffector, %s", __FUNCTION__ );
-    return mEffector->updateWindowSize(width, height) ? 0 : -1;
+    if (mEffector!= NULL) {
+        return mEffector->updateWindowSize(width, height) ? 0 : -1;
+    } else {
+       return 0;
+    }
 }
 
 static int reRender(int32_t width, int32_t height, void *data, size_t inLen, SkColorType colorType) {
@@ -297,7 +303,7 @@ static int reRender(int32_t width, int32_t height, void *data, size_t inLen, SkC
     GraphicBufferMapper &mapper = GraphicBufferMapper::get();
     Rect bounds(frame_width,frame_height);
     uint8_t* img = NULL;
-    uint64_t usage = am_gralloc_get_omx_osd_producer_usage() |
+    uint64_t usage = image_am_gralloc_get_omx_osd_producer_usage() |
                      GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN;
     err =  mapper.lock(buf->handle,usage,bounds,(void**)(&img));
     if (err != NO_ERROR) {
@@ -355,7 +361,7 @@ static int render(int32_t width, int32_t height, void *data, size_t inLen, SkCol
     ALOGE("renderBuf %d %d  %d %d %d",buf->format,buf->stride,buf->width, buf->height, fenceFd);
     Rect bounds(frame_width,frame_height);
     uint8_t* img = NULL;
-    uint64_t usage = am_gralloc_get_omx_osd_producer_usage() |
+    uint64_t usage = image_am_gralloc_get_omx_osd_producer_usage() |
             GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN;
     err =  mapper.lock(buf->handle,usage, bounds,(void**)(&img));
     if (err != NO_ERROR) {
@@ -431,7 +437,7 @@ static int renderYuv420(UniqueAsyncResult result, int width, int height) {
 
     Rect bounds(width, height);
     uint8_t *img = nullptr;
-    uint64_t usage = am_gralloc_get_omx_osd_producer_usage() |
+    uint64_t usage = image_am_gralloc_get_omx_osd_producer_usage() |
                      GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN;
     GraphicBufferMapper &mapper = GraphicBufferMapper::get();
     err = mapper.lock(buf->handle, usage, bounds, (void **) (&img));
@@ -494,7 +500,7 @@ static int renderEmpty(int32_t width, int32_t height) {
     ALOGE("renderBuf %d %d  %d %d %d",buf->format,buf->stride,buf->width, buf->height, fenceFd);
     Rect bounds(frame_width,frame_height);
     uint8_t* img = NULL;
-    uint64_t usage = am_gralloc_get_omx_osd_producer_usage() |
+    uint64_t usage = image_am_gralloc_get_omx_osd_producer_usage() |
                      GRALLOC_USAGE_SW_READ_NEVER | GRALLOC_USAGE_SW_WRITE_OFTEN;
     err = mapper.lock(buf->handle,usage,bounds,(void**)(&img));
     if (err != OK) {
