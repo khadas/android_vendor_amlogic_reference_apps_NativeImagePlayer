@@ -955,10 +955,13 @@ public class ImagePlayer {
             Log.d(TAG,"stop");
             mNetImageLoader.end();
             mWorkHandler.removeCallbacks(ShowFrame);
+         }
+         if (bindSurface) {
             mWorkHandler.post(this::unbindSurface);
-            mWorkHandler.getLooper().quitSafely();
-            mStatus = Status.STOPPED;
-        }
+         }
+         mWorkHandler.getLooper().quitSafely();
+         mStatus = Status.STOPPED;
+         mOsdImageView = null;
     }
 
     public void release() {
