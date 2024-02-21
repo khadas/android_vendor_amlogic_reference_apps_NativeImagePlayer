@@ -33,7 +33,10 @@
 namespace android {
 ImageEffector::ImageEffector(int32_t width, int32_t height, bool gpuRender, OnRenderFinished callback) {
     FUNC_E();
-    mScreenRect.setWH(width, height);
+
+    int alignedWidth = GRALLOC_ALIGN(width, 32);
+    ALOGW_IF(alignedWidth != width, "Aligned width form %d to %d", width, alignedWidth);
+    mScreenRect.setWH(alignedWidth, height);
     mGpuRender = gpuRender;
     mRenderFinishedCallback = std::move(callback);
     ALOGD("Surface size: [%f, %f], gpuRender: %d", mScreenRect.width(), mScreenRect.height(), mGpuRender);
@@ -189,7 +192,6 @@ bool ImageEffector::updateWindowSize(int width, int height) {
         return false;
     }
 
-    width = GRALLOC_ALIGN(width, 32);
     int w = mScreenRect.width();
     int h = mScreenRect.height();
     ALOGD("updateWindowSize, width= %d, height= %d, mScreenWidth= %d, mScreenHeight= %d",
@@ -461,10 +463,12 @@ void ImageEffector::initScreenCanvas(int width, int height) {
         mScreenBitmap.setPixels(nullptr);
     }
 
-    mScreenRect.setWH(width, height);
+    int alignedWidth = GRALLOC_ALIGN(width, 32);
+    ALOGW_IF(alignedWidth != width, "initScreenCanvas, Aligned width form %d to %d", width, alignedWidth);
+    mScreenRect.setWH(alignedWidth, height);
 
     ALOGD("initScreenCanvas, mScreenWidth= %f, mScreenHeight= %f", mScreenRect.width(), mScreenRect.height());
-    SkImageInfo k32Info = SkImageInfo::Make(width, height,
+    SkImageInfo k32Info = SkImageInfo::Make(mScreenRect.width(), mScreenRect.height(),
                                             SkColorType::kN32_SkColorType,
                                             SkAlphaType::kPremul_SkAlphaType);
     mScreenBitmap.setInfo(k32Info);
@@ -473,7 +477,7 @@ void ImageEffector::initScreenCanvas(int width, int height) {
         mScreenBitmap.allocPixels();
         mScreenBitmap.eraseARGB(255, 0, 0, 0);
     }
-    mLastDirtyRegion.setRect(SkIRect::MakeWH(width, height));
+    mLastDirtyRegion.setRect(SkIRect::MakeWH(mScreenRect.width(), mScreenRect.height()));
 
     if (mGpuRender) {
         ALOGD("Using Gpu rendering");
