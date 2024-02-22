@@ -27,6 +27,7 @@ using namespace android;
 #define PROPERTY "vendor.display-size"
 #define PROP_DUMP_IMAGE_PATH "debug.image_player.dump_path"
 #define PROP_CONF_GPU_RENDER "debug.vendor.image_gpu_render"
+#define PROP_CONFIG_LOW_RAM "ro.config.low_ram"
 #define ODS_WIDTH_PROPERTY "ro.surface_flinger.max_graphics_width"
 #define ODS_HEIGHT_PROPERTY "ro.surface_flinger.max_graphics_height"
 sp<ANativeWindow> mNativeWindow = nullptr;
@@ -156,6 +157,22 @@ static int initParam(JNIEnv *env, jobject entity) {
     return ret;
 }
 
+static bool isGpuAccelerateEnabled() {
+    bool gpuRender = android::base::GetBoolProperty(std::string(PROP_CONF_GPU_RENDER), true);
+    if (!gpuRender) {
+        ALOGW("Gpu accelerate disabled from user.");
+        return false;
+    }
+
+    bool lowRamDevice = android::base::GetBoolProperty(std::string(PROP_CONFIG_LOW_RAM), false);
+    if (lowRamDevice) {
+        ALOGW("Gpu accelerate disabled on low ram device.");
+        return false;
+    }
+
+    return true;
+}
+
 void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface, jint surfaceWidth, jint surfaceHeight,
         jboolean usingYuv444){
     sp<IGraphicBufferProducer> new_st = NULL;
@@ -189,8 +206,8 @@ void bindSurface(JNIEnv *env, jobject imageobj, jobject jsurface, jint surfaceWi
 
         ALOGD("bindSurface, format: %s", (isYuv420 ? "HAL_PIXEL_FORMAT_YCRCB_420_SP" : "HAL_PIXEL_FORMAT_YCBCR_444_888"));
 
-        bool gpuRender = android::base::GetBoolProperty(std::string(PROP_CONF_GPU_RENDER), true);
-        mEffector = new ImageEffector(surfaceWidth, surfaceHeight, gpuRender,
+        bool gpuEnabled = isGpuAccelerateEnabled();
+        mEffector = new ImageEffector(surfaceWidth, surfaceHeight, gpuEnabled,
                                       isYuv420 ? ([](UniqueAsyncResult result, int width, int height) {
                                           renderYuv420(std::move(result), width, height);
                                       }) : nullptr);
