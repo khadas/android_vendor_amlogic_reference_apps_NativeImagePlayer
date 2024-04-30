@@ -176,10 +176,16 @@ public class OsdImageView extends ImageView {
     @Override
     protected void onDraw(Canvas canvas) {
         Log.d(TAG, "onDraw: ");
-        if (!mImageRect.isEmpty()) {
-            canvas.concat(calculateFinalMatrix());
-        }
-        super.onDraw(canvas);
+        try {
+            if (!mImageRect.isEmpty()) {
+                canvas.concat(calculateFinalMatrix());
+            }
+            super.onDraw(canvas);
+        } catch(RuntimeException et) {
+              Log.d(TAG, "onprepare Runtime error");
+              et.printStackTrace();
+
+       }
     }
 
     private Matrix calculateFinalMatrix() {

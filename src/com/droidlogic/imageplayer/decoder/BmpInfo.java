@@ -95,7 +95,7 @@ public class BmpInfo {
     }
 
     public void release() {
-        if (mCurrentStatus == Status.DECODE || mCurrentStatus == Status.PLAYING)
+        //if (mCurrentStatus == Status.DECODE || mCurrentStatus == Status.PLAYING)
             nativeRelease(mDecoderPtr);
         mBmpWidth = 0;
         mBmpHeight = 0;

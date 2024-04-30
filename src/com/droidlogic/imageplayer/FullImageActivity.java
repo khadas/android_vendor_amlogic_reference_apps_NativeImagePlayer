@@ -217,6 +217,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
         int permission = ActivityCompat.checkSelfPermission(activity,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE);
         if (permission != PackageManager.PERMISSION_GRANTED) {
+            Log.d(TAG,"request permissions");
             ActivityCompat.requestPermissions(FullImageActivity.this, PERMISSIONS_STORAGE,
                     REQUEST_EXTERNAL_STORAGE);
         }
@@ -226,7 +227,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
         int[] grantResults) {
         if (requestCode == REQUEST_EXTERNAL_STORAGE) {
             if (grantResults.length == 2 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                Log.d("TAG","mImagePlayer.getPrepareListener()"+mImagePlayer.getPrepareListener());
+                Log.d(TAG,"mImagePlayer.getPrepareListener()"+mImagePlayer.getPrepareListener());
                 if (mImagePlayer.getPrepareListener() == null) {
                     mImageList = initFileList(mUri);
                     showBmp();
@@ -331,7 +332,7 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        verifyStoragePermissions(this);
+        //verifyStoragePermissions(this);//no need this for system app, will cause ui stop 1-2S sometimes
         setContentView(R.layout.activity_main);
         initViews();
 

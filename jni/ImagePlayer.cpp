@@ -158,7 +158,7 @@ static int initParam(JNIEnv *env, jobject entity) {
 }
 
 static bool isGpuAccelerateEnabled() {
-    bool gpuRender = android::base::GetBoolProperty(std::string(PROP_CONF_GPU_RENDER), true);
+    bool gpuRender = android::base::GetBoolProperty(std::string(PROP_CONF_GPU_RENDER), false);//for gpu is slow about 2-3s on t982
     if (!gpuRender) {
         ALOGW("Gpu accelerate disabled from user.");
         return false;

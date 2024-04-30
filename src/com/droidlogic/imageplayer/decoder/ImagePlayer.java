@@ -35,7 +35,8 @@ import android.view.SurfaceControl;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import com.droidlogic.app.SystemControlManager;
-
+import java.io.File;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 public class ImagePlayer {
@@ -124,7 +125,7 @@ public class ImagePlayer {
     private Runnable reshow = new Runnable() {
          @Override
         public void run() {
-             if (mSurfaceView == null) {
+             if (mSurfaceView == null || mSurfaceView.getSurfaceControl() == null) {
                  mWorkHandler.postDelayed(reshow, 200);
              } else {
                  show(mShowingFit);
@@ -139,11 +140,17 @@ public class ImagePlayer {
                     return;
                 }
                 long time  = System.currentTimeMillis();
+                Log.d(TAG, "decodeRunnable");
                 boolean decodeOk = mBmpInfoHandler.decode();
                 boolean ready = (mReadyListener != null);
                 Log.d(TAG,"decodeOk"+decodeOk+" ready"+ready);
                 if (decodeOk && ready) {
                     mStatus = Status.PREPARED;
+                    if (mBmpInfoHandler== null) {
+                        Log.d(TAG, "maybe release");
+                        return;
+                    }
+                    Log.d(TAG, "mBmpInfoHandler.filePath:" + mBmpInfoHandler.filePath);
                     mReadyListener.Prepared(mBmpInfoHandler.filePath);
                 } else if (decodeOk) {
                     mWorkHandler.postDelayed(preparedDelay, 200);
@@ -151,7 +158,7 @@ public class ImagePlayer {
                     if (mReadyListener != null ) {
                         mReadyListener.playerr(mBmpInfoHandler.filePath);
                     }
-                    Log.d("TAG", "cannot display");
+                    Log.d(TAG, "cannot display");
                 }
             }
         }
@@ -178,6 +185,7 @@ public class ImagePlayer {
         public void run() {
             boolean ret = true;
             synchronized (lockObject) {
+                Log.d(TAG, "setDataSourceWork enter");
                 mBmpInfoHandler = BmpInfoFactory.getBmpInfo(mImageFilePath);
                 if (mBmpInfoHandler == null) {
                     Log.e(TAG, "setDataSourceWork, mBmpInfoHandler is null");
@@ -187,6 +195,10 @@ public class ImagePlayer {
                 mBmpInfoHandler.setImagePlayer(ImagePlayer.this);
                 ret = mBmpInfoHandler.setDataSource(mImageFilePath);
                 Log.d(TAG,"setDataSource"+mImageFilePath+"@"+mBmpInfoHandler+"----"+ret);
+                if (mBmpInfoHandler == null) {
+                    Log.d(TAG, "maybe release, do nothing,return");
+                    return;
+                }
                 if (!ret && mBmpInfoHandler instanceof GifBmpInfo) {
                     if (mLastBmpInfo != null) {
                         mLastBmpInfo.release();
@@ -197,8 +209,13 @@ public class ImagePlayer {
                     mLastBmpInfo = mBmpInfoHandler;
                 }
             }
-            if (ret)
+            if (ret) {
+                Log.d(TAG, "mStatus:" + mStatus);
+
+                mWorkHandler.removeCallbacks(decodeRunnable);
                 mWorkHandler.post(decodeRunnable);
+            }
+            Log.d(TAG, "setDataSourceWork end");
         }
     };
     private Runnable releasework = new Runnable() {
@@ -261,7 +278,7 @@ public class ImagePlayer {
                         mStatus = Status.PLAYING;
                         mShowingFit = -1;
                         mUiHandler.post(()->updateViewVisibility());
-                        if (!rendered && mReadyListener != null ) {
+                        if (!rendered && mReadyListener != null && mBmpInfoHandler != null) {
                             mReadyListener.played(mBmpInfoHandler.filePath);
                         }
                     }
@@ -438,6 +455,7 @@ public class ImagePlayer {
             mWorkHandler.removeCallbacks(rotateCropWork);
             mWorkHandler.removeCallbacks(ShowFrame);
             mWorkHandler.removeCallbacks(decodeRunnable);
+            mWorkHandler.removeCallbacks(setDataSourceWork);
             mWorkHandler.post(setDataSourceWork);
         }
     }
@@ -472,17 +490,21 @@ public class ImagePlayer {
         if (filePath.toLowerCase().endsWith(".gif")) {
             return true;
         }
+        if (mViewMode == VIEW_MODE_VC_UHD) {
+            return false;
+        } else {
 
-        BitmapFactory.Options options = new BitmapFactory.Options();
-        options.inJustDecodeBounds = true;
-        Bitmap bitmap = BitmapFactory.decodeFile(filePath);
-        if (bitmap == null) {
-            appendDebugInfo("Bad Image" + "\n",true);
-            Log.e(TAG, "Decode image: " + filePath + " failed");
-            return true;
-        }
+            BitmapFactory.Options options = new BitmapFactory.Options();
+            options.inJustDecodeBounds = true;
+            Bitmap bitmap = BitmapFactory.decodeFile(filePath);
+            if (bitmap == null) {
+                appendDebugInfo("Bad Image" + "\n",true);
+                Log.e(TAG, "Decode image: " + filePath + " failed");
+                return true;
+            }
 
-        return isDisplayToOsd(bitmap);
+            return isDisplayToOsd(bitmap);
+       }
     }
 
     private boolean isDisplayToOsd(Bitmap bitmap) {
@@ -969,11 +991,16 @@ public class ImagePlayer {
         mWorkHandler.removeCallbacks(ShowFrame);
         mWorkHandler.removeCallbacks(decodeRunnable);
         mWorkHandler.removeCallbacks(setDataSourceWork);
-        mWorkHandler.post(releasework);
+        mWorkHandler.removeCallbacks(rotateWork);
+        mWorkHandler.removeCallbacks(rotateCropWork);
         mStatus = Status.IDLE;
         mSurfaceHeight = 0;
         mSurfaceWidth = 0;
         mDegree = 0;
+
+        Log.d(TAG, "release bmp info handler end");
+        mWorkHandler.post(releasework);
+
     }
 
     public int getMxW() {
