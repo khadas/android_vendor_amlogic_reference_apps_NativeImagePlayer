@@ -282,7 +282,7 @@ void ImageEffector::render() {
         }
         SkCanvas* canvas = mTargetCanvas;
 
-        if (((int)rotation % 90) == 0) {
+        if (((int)rotation % 90) == 0 && !malign) {
             clearDirtyRegion(canvas, currentRect);
         } else {
             // Clear all if not integer multiples of 90,
@@ -466,6 +466,7 @@ void ImageEffector::initScreenCanvas(int width, int height) {
     int alignedWidth = GRALLOC_ALIGN(width, 32);
     ALOGW_IF(alignedWidth != width, "initScreenCanvas, Aligned width form %d to %d", width, alignedWidth);
     mScreenRect.setWH(alignedWidth, height);
+    malign = (alignedWidth != width);
 
     ALOGD("initScreenCanvas, mScreenWidth= %f, mScreenHeight= %f", mScreenRect.width(), mScreenRect.height());
     SkImageInfo k32Info = SkImageInfo::Make(mScreenRect.width(), mScreenRect.height(),

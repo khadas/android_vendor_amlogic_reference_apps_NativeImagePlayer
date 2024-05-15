@@ -170,6 +170,7 @@ private:
     int32_t mFit;
     bool mIsLastTypeMovie{false};
     bool mGpuRender{false};
+    bool malign {false};//whether the width of screen has align and change vlaue
 
     sp<SkiaGpuDevice> mGpuDevice;
     SkPaint mAntiPaint;
