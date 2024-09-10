@@ -63,6 +63,7 @@ public class ImagePlayer {
     private boolean mIsShowToOsd = true;
     private Size mOsdLimitedSize;
     private String mDebugImageInfo = "";
+    private Bitmap mBitmap;
 
     /**
      * Always playing image to OSD
@@ -137,6 +138,9 @@ public class ImagePlayer {
         public void run() {
             synchronized(lockObject) {
                 if (mBmpInfoHandler == null) {
+                    if (mReadyListener != null ) {
+                        mReadyListener.playerr(mImageFilePath);
+                    }
                     return;
                 }
                 long time  = System.currentTimeMillis();
@@ -189,6 +193,9 @@ public class ImagePlayer {
                 mBmpInfoHandler = BmpInfoFactory.getBmpInfo(mImageFilePath);
                 if (mBmpInfoHandler == null) {
                     Log.e(TAG, "setDataSourceWork, mBmpInfoHandler is null");
+                    if (mReadyListener != null ) {
+                        mReadyListener.playerr(mImageFilePath);
+                    }
                     return;
                 }
 
@@ -243,6 +250,9 @@ public class ImagePlayer {
 
                     if (mBmpInfoHandler == null) {
                         Log.e(TAG, "ShowFrame, mBmpInfoHandler is null.");
+                        if (mReadyListener != null ) {
+                            mReadyListener.playerr(mImageFilePath);
+                        }
                         return;
                     }
 
@@ -287,6 +297,27 @@ public class ImagePlayer {
                 }
             }
         }
+    };
+
+     private Runnable setDataSourceCheckedWork = new Runnable() {
+        @Override
+        public void run() {
+            boolean ret = true;
+            synchronized (lockObject) {
+                Log.d(TAG, "setDataSourceCheckedWork enter");
+                mIsShowToOsd = isDisplayToOsd(mImageFilePath);
+                if (mBitmap != null && mIsShowToOsd) {
+                    Log.d(TAG, "has bitmap, use it directly");
+                    Drawable drawable = new BitmapDrawable(mBitmap);
+                    mUiHandler.post(()->setDataSourceInternal(mImageFilePath, drawable));
+                } else {
+                    mUiHandler.post(()->setDataSourceInternal(mImageFilePath, null));
+                }
+
+
+                Log.d(TAG, "setDataSourceCheckedWork end");
+           }
+       }
     };
 
     private ImagePlayer() {
@@ -367,8 +398,16 @@ public class ImagePlayer {
         if (netImage) {
             loadImageFromInternet(path);
         } else {
-            mIsShowToOsd = isDisplayToOsd(path);
-            setDataSourceInternal(path, null);
+
+            mWorkHandler.removeCallbacks(rotateWork);
+            mWorkHandler.removeCallbacks(rotateCropWork);
+            mWorkHandler.removeCallbacks(ShowFrame);
+            mWorkHandler.removeCallbacks(decodeRunnable);
+            mWorkHandler.removeCallbacks(setDataSourceWork);
+            mWorkHandler.removeCallbacks(setDataSourceCheckedWork);
+            mWorkHandler.post(setDataSourceCheckedWork);
+            //mIsShowToOsd = isDisplayToOsd(path);
+            //setDataSourceInternal(path, null);
         }
     }
 
@@ -487,6 +526,7 @@ public class ImagePlayer {
         //return filePath.toLowerCase().endsWith(".gif");
 
         // Always play gif to osd
+        mBitmap = null;
         if (filePath.toLowerCase().endsWith(".gif")) {
             return true;
         }
@@ -496,14 +536,14 @@ public class ImagePlayer {
 
             BitmapFactory.Options options = new BitmapFactory.Options();
             options.inJustDecodeBounds = true;
-            Bitmap bitmap = BitmapFactory.decodeFile(filePath);
-            if (bitmap == null) {
+            mBitmap = BitmapFactory.decodeFile(filePath);
+            if (mBitmap == null) {
                 appendDebugInfo("Bad Image" + "\n",true);
                 Log.e(TAG, "Decode image: " + filePath + " failed");
-                return true;
+                 return false;
             }
 
-            return isDisplayToOsd(bitmap);
+            return isDisplayToOsd(mBitmap);
        }
     }
 
@@ -534,6 +574,7 @@ public class ImagePlayer {
             appendDebugInfo("OSD limited size: " + osdLimitedWidth + " x " + osdLimitedHeight + "\n", true);
             appendDebugInfo("Video size: " + mScreenWidth + " x " + mScreenHeight, true);
         }
+        Log.d(TAG, "view mode:" + mViewMode);
 
         if (mViewMode == VIEW_MODE_FAST_OSD) {
             if (bitmap.getByteCount() > mOsdMaxImagePixels) {
@@ -565,10 +606,10 @@ public class ImagePlayer {
 
             Log.d(TAG, "limitedOsdW: " + limitedOsdW + ", limitedOsdH: " + limitedOsdH);
 
-            if (videoWidth <= limitedOsdW || videoHeight <= limitedOsdH) {
+            /*if (videoWidth <= limitedOsdW || videoHeight <= limitedOsdH) {//if image too large may anr
                 // No need show to video
                 return true;
-            }
+            }*/
 
             return bitmap.getWidth() <= limitedOsdW && bitmap.getHeight() <= limitedOsdH;
         }
@@ -984,6 +1025,7 @@ public class ImagePlayer {
          mWorkHandler.getLooper().quitSafely();
          mStatus = Status.STOPPED;
          mOsdImageView = null;
+         mBitmap = null;
     }
 
     public void release() {

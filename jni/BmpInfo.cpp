@@ -188,9 +188,10 @@ bool decodeInner(JNIEnv *env, jobject obj1, jlong nativePtr, jint targetWidth, j
 //        float scaleVal = 1.0f*imageWidth/SURFACE_4K_WIDTH > 1.0f*imageHeight/SURFACE_4K_HEIGHT ?
 //                            1.0f*imageWidth/SURFACE_4K_WIDTH : 1.0f*imageHeight/SURFACE_4K_HEIGHT;
 //        sampleSize = round(scaleVal);
-//    }else if (imageWidth > targetWidth && imageWidth/targetWidth == imageHeight/targetHeight) {
-//        sampleSize = round(SURFACE_4K_WIDTH/targetWidth);
-//    }
+//} else
+    if (imageWidth > targetWidth && imageWidth/targetWidth == imageHeight/targetHeight) {
+         sampleSize = round(imageWidth/targetWidth);
+    }
 
     SkColorType colorType = imageInfo.colorType();
     ALOGI("colorType : %d",colorType);
@@ -260,13 +261,15 @@ bool nativeRenderFrame(JNIEnv *env, jobject obj1){
 
     return true;
 }
-void nativeRelease(JNIEnv *env, jobject obj1,jlong nativePtr){
-    long bmp = env->GetLongField(obj1,bmphandler);
-    ALOGE("nativeRelease %ld",bmp);
-    if (bmp != 0) {
-        env->SetLongField(obj1,bmphandler,0);
-        auto ptr= reinterpret_cast<VBitmap*>(bmp);
-        SkSafeUnref(ptr);
+void nativeRelease(JNIEnv *env, jobject obj1,jlong nativePtr) {
+    if (bmphandler != NULL) {
+        long bmp = env->GetLongField(obj1,bmphandler);
+        ALOGE("nativeRelease %ld",bmp);
+        if (bmp != 0) {
+            env->SetLongField(obj1,bmphandler,0);
+            auto ptr= reinterpret_cast<VBitmap*>(bmp);
+            SkSafeUnref(ptr);
+        }
     }
     SkFILEStream* stream = reinterpret_cast<SkFILEStream*>(nativePtr);
     if (stream != NULL) {

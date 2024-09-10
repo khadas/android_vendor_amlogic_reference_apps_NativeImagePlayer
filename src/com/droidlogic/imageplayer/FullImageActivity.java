@@ -809,6 +809,11 @@ public class FullImageActivity extends Activity implements View.OnClickListener,
             Toast.makeText(this, errStr, Toast.LENGTH_SHORT).show();
         });
         mImagePlayer.release();
+        if (mLoadingProgress.getVisibility() == View.VISIBLE) {
+            runOnUiThread(() -> {
+                mLoadingProgress.setVisibility(View.GONE);
+            });
+        }
     }
 
     @Override
